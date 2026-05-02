@@ -1,0 +1,5 @@
+app/api/accounts/route.ts(47,47): error TS2339: Property 'errors' does not exist on type 'ZodError<unknown>'.
+app/api/journal/route.ts(80,47): error TS2339: Property 'errors' does not exist on type 'ZodError<unknown>'.
+app/api/kasbon/route.ts(84,53): error TS2339: Property 'errors' does not exist on type 'ZodError<unknown>'.
+app/api/sales/route.ts(128,53): error TS2339: Property 'errors' does not exist on type 'ZodError<unknown>'.
+app/api/voucher/route.ts(66,53): error TS2339: Property 'errors' does not exist on type 'ZodError<unknown>'.

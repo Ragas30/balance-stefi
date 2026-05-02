@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Account {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  type      AccountType
+
+  createdAt DateTime @default(now())
+
+  details   TransactionDetail[]
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+model Transaction {
+  id          String   @id @default(uuid())
+  date        DateTime
+  description String
+
+  createdAt   DateTime @default(now())
+
+  details     TransactionDetail[]
+}
+
+model TransactionDetail {
+  id            String   @id @default(uuid())
+  transactionId String
+  accountId     String
+
+  debit         Decimal  @default(0)
+  credit        Decimal  @default(0)
+
+  transaction   Transaction @relation(fields: [transactionId], references: [id])
+  account       Account     @relation(fields: [accountId], references: [id])
+}
+
+model Product {
+  id     String @id @default(uuid())
+  name   String
+  price  Decimal
+  stock  Int
+}
+
+model Sale {
+  id        String   @id @default(uuid())
+  date      DateTime
+  total     Decimal
+
+  details   SaleDetail[]
+}
+
+model SaleDetail {
+  id        String @id @default(uuid())
+  saleId    String
+  productId String
+
+  qty       Int
+  price     Decimal
+
+  sale      Sale @relation(fields: [saleId], references: [id])
+}
+
+model Voucher {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  value     Decimal
+  balance   Decimal
+  status    String
+}
+
+model Receivable {
+  id        String   @id @default(uuid())
+  customer  String
+  total     Decimal
+  paid      Decimal
+  status    String
+}
+
+model Payable {
+  id        String   @id @default(uuid())
+  name      String
+  total     Decimal
+  paid      Decimal
+  status    String
+}
