@@ -1,151 +1,220 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Book, CheckCircle, Search } from "lucide-react";
 
-type Account = {
-  id: string;
-  code: string;
-  name: string;
-  type: string;
+type Account = { id: string; code: string; name: string; type: string };
+
+const TYPE_CONFIG: Record<string, { label: string; badge: string }> = {
+  ASSET:     { label: "Aset (Harta)",         badge: "badge-emerald" },
+  LIABILITY: { label: "Kewajiban (Hutang)",   badge: "badge-rose" },
+  EQUITY:    { label: "Modal (Ekuitas)",      badge: "badge-violet" },
+  REVENUE:   { label: "Pendapatan",           badge: "badge-slate" },
+  EXPENSE:   { label: "Beban",                badge: "badge-amber" },
 };
 
 export default function COAPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState({ code: "", name: "", type: "ASSET" });
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [search, setSearch] = useState("");
 
-  useEffect(() => {
-    fetchAccounts();
-  }, []);
+  useEffect(() => { fetchAccounts(); }, []);
 
   const fetchAccounts = async () => {
     try {
       const res = await fetch("/api/accounts");
-      const data = await res.json();
-      setAccounts(data);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
+      setAccounts(await res.json());
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaving(true);
     try {
       const res = await fetch("/api/accounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-
       if (res.ok) {
         setFormData({ code: "", name: "", type: "ASSET" });
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 3000);
         fetchAccounts();
       } else {
-        const errorData = await res.json();
-        alert(errorData.error);
+        const err = await res.json();
+        alert(err.error);
       }
-    } catch (e) {
-      console.error(e);
-      alert("Error adding account");
-    }
+    } catch (e) { console.error(e); }
+    finally { setSaving(false); }
   };
 
-  const typeColors: Record<string, string> = {
-    ASSET: "bg-emerald-100 text-emerald-800",
-    LIABILITY: "bg-rose-100 text-rose-800",
-    EQUITY: "bg-indigo-100 text-indigo-800",
-    REVENUE: "bg-blue-100 text-blue-800",
-    EXPENSE: "bg-orange-100 text-orange-800",
-  };
+  const filtered = accounts.filter(
+    (a) =>
+      a.code.toLowerCase().includes(search.toLowerCase()) ||
+      a.name.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <h1 className="text-3xl font-bold mb-6 text-slate-800">Chart of Accounts (COA)</h1>
-      
-      <div className="grid md:grid-cols-3 gap-6">
-        <div className="md:col-span-1 border rounded-xl p-6 bg-white shadow-sm ring-1 ring-slate-200">
-          <h2 className="text-xl font-semibold mb-4 text-slate-700">Tambah Akun</h2>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1 text-slate-600">Kode Akun</label>
-              <input 
-                type="text" 
-                required
-                className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none"
-                value={formData.code}
-                onChange={(e) => setFormData({...formData, code: e.target.value})}
-                placeholder="Ex: 1-100"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1 text-slate-600">Nama Akun</label>
-              <input 
-                type="text" 
-                required
-                className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none"
-                value={formData.name}
-                onChange={(e) => setFormData({...formData, name: e.target.value})}
-                placeholder="Ex: Kas Utama"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1 text-slate-600">Tipe</label>
-              <select 
-                className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none"
-                value={formData.type}
-                onChange={(e) => setFormData({...formData, type: e.target.value})}
+    <div className="max-w-6xl mx-auto space-y-6">
+      {/* Toast */}
+      {success && (
+        <div className="fixed top-4 right-4 z-50 bg-indigo-600 text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-2 animate-slide-up">
+          <CheckCircle size={18} />
+          <span className="font-semibold">Akun berhasil ditambahkan!</span>
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="animate-slide-up">
+        <h1 className="page-title flex items-center gap-2.5">
+          <Book className="text-sky-600" size={28} />
+          Chart of Accounts (COA)
+        </h1>
+        <p className="page-subtitle">Kelola daftar akun untuk pencatatan jurnal akuntansi</p>
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-5">
+        {/* Form */}
+        <div className="animate-slide-up-2">
+          <div className="card p-6 sticky top-6">
+            <h2 className="font-bold text-slate-800 flex items-center gap-2 mb-5">
+              <Plus size={18} className="text-sky-500" />
+              Tambah Akun Baru
+            </h2>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="form-label">Kode Akun</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.code}
+                  onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                  placeholder="Contoh: 1-100"
+                  className="form-input font-mono"
+                />
+              </div>
+              <div>
+                <label className="form-label">Nama Akun</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="Contoh: Kas Utama"
+                  className="form-input"
+                />
+              </div>
+              <div>
+                <label className="form-label">Tipe Akun</label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                  className="form-input"
+                >
+                  {Object.entries(TYPE_CONFIG).map(([key, cfg]) => (
+                    <option key={key} value={key}>{cfg.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Preview badge */}
+              <div className="bg-slate-50 rounded-xl p-3 flex items-center gap-3 border border-slate-100">
+                <span className="text-xs text-slate-400">Preview:</span>
+                <span className="font-mono text-sm font-semibold text-slate-700">
+                  {formData.code || "—"}
+                </span>
+                <span className="text-sm text-slate-600 flex-1 truncate">
+                  {formData.name || "—"}
+                </span>
+                <span className={`badge ${TYPE_CONFIG[formData.type]?.badge}`}>
+                  {formData.type}
+                </span>
+              </div>
+
+              <button
+                type="submit"
+                disabled={saving}
+                className="btn btn-primary w-full justify-center py-3"
               >
-                <option value="ASSET">Asset (Harta)</option>
-                <option value="LIABILITY">Liability (Kewajiban/Hutang)</option>
-                <option value="EQUITY">Equity (Modal)</option>
-                <option value="REVENUE">Revenue (Pendapatan)</option>
-                <option value="EXPENSE">Expense (Beban)</option>
-              </select>
-            </div>
-            <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg font-medium transition-colors flex justify-center items-center gap-2">
-              <Plus size={18} /> Simpan Akun
-            </button>
-          </form>
+                {saving ? <div className="spinner" /> : <Plus size={17} />}
+                {saving ? "Menyimpan..." : "Tambah Akun"}
+              </button>
+            </form>
+          </div>
         </div>
 
-        <div className="md:col-span-2 border rounded-xl p-6 bg-white shadow-sm ring-1 ring-slate-200">
-          <h2 className="text-xl font-semibold mb-4 text-slate-700">Daftar Akun</h2>
-          {loading ? (
-            <div className="text-slate-500">Memuat data...</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="py-2 px-4 text-slate-600 font-medium">Kode</th>
-                    <th className="py-2 px-4 text-slate-600 font-medium">Nama Akun</th>
-                    <th className="py-2 px-4 text-slate-600 font-medium">Tipe</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {accounts.map(acc => (
-                    <tr key={acc.id} className="border-b border-slate-100 hover:bg-slate-50">
-                      <td className="py-2 px-4 font-medium text-slate-700">{acc.code}</td>
-                      <td className="py-2 px-4 text-slate-600">{acc.name}</td>
-                      <td className="py-2 px-4">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${typeColors[acc.type]}`}>
-                          {acc.type}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                  {accounts.length === 0 && (
-                    <tr>
-                      <td colSpan={3} className="py-4 text-center text-slate-500">Belum ada data akun</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+        {/* List */}
+        <div className="lg:col-span-2 animate-slide-up-3">
+          <div className="card overflow-hidden">
+            <div className="section-header">
+              <h3 className="flex items-center gap-2">
+                Daftar Akun
+                <span className="badge badge-slate">{accounts.length}</span>
+              </h3>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                <input
+                  type="text"
+                  placeholder="Cari akun..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="form-input pl-9 w-52 text-sm py-2"
+                />
+              </div>
             </div>
-          )}
+
+            {loading ? (
+              <div className="flex items-center justify-center py-16 gap-3 text-slate-400">
+                <div className="w-6 h-6 border-2 border-sky-200 border-t-sky-500 rounded-full animate-spin" />
+                <span className="text-sm">Memuat data...</span>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th className="w-28">Kode</th>
+                      <th>Nama Akun</th>
+                      <th className="w-36 text-center">Tipe</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((acc) => (
+                      <tr key={acc.id}>
+                        <td>
+                          <span className="font-mono font-semibold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-md text-xs">
+                            {acc.code}
+                          </span>
+                        </td>
+                        <td className="font-medium text-slate-800">{acc.name}</td>
+                        <td className="text-center">
+                          <span className={`badge ${TYPE_CONFIG[acc.type]?.badge ?? "badge-slate"}`}>
+                            {acc.type}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                    {filtered.length === 0 && (
+                      <tr>
+                        <td colSpan={3}>
+                          <div className="empty-state">
+                            <Book size={36} />
+                            <p>{search ? "Akun tidak ditemukan" : "Belum ada akun. Tambahkan di form kiri."}</p>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

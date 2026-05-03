@@ -1,211 +1,258 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Ticket, Plus, Search, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import {
+  Ticket,
+  Plus,
+  Search,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  Sparkles,
+  Wallet,
+} from "lucide-react";
 
 type Voucher = {
-    id: string;
-    code: string;
-    value: number;
-    balance: number;
-    status: "ACTIVE" | "USED";
+  id: string;
+  code: string;
+  value: number;
+  balance: number;
+  status: "ACTIVE" | "USED";
 };
 
 export default function VoucherPage() {
-    const [vouchers, setVouchers] = useState<Voucher[]>([]);
-    const [isGenerating, setIsGenerating] = useState(false);
-    const [newVoucherValue, setNewVoucherValue] = useState("");
-    const [loading, setLoading] = useState(false);
+  const [vouchers, setVouchers] = useState<Voucher[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [newVoucherValue, setNewVoucherValue] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [success, setSuccess] = useState(false);
 
-    useEffect(() => {
-        fetchVouchers();
-    }, []);
+  useEffect(() => { fetchVouchers(); }, []);
 
-    const fetchVouchers = async () => {
-        try {
-            const res = await fetch("/api/voucher");
-            const data = await res.json();
-            if (res.ok) setVouchers(data);
-        } catch (e) {
-            console.error(e);
-        }
-    };
+  const fetchVouchers = async () => {
+    try {
+      const res = await fetch("/api/voucher");
+      const data = await res.json();
+      if (res.ok) setVouchers(data);
+    } catch (e) { console.error(e); }
+  };
 
-    const formatCurrency = (val: number) => {
-        return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(val);
-    };
+  const fmt = (v: number) =>
+    new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(v);
 
-    const handleGenerate = async (e: React.FormEvent) => {
-        e.preventDefault();
-        const val = parseInt(newVoucherValue);
-        if (!val || val <= 0) return;
+  const handleGenerate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const val = parseInt(newVoucherValue);
+    if (!val || val <= 0) return;
 
-        setLoading(true);
-        try {
-            const code = `VCHR-${Math.floor(Math.random() * 90000) + 10000}`;
-            const res = await fetch("/api/voucher", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    code,
-                    value: val
-                })
-            });
+    setLoading(true);
+    try {
+      const code = `VCHR-${Math.floor(Math.random() * 90000) + 10000}`;
+      const res = await fetch("/api/voucher", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, value: val }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
 
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+      setNewVoucherValue("");
+      setIsGenerating(false);
+      fetchVouchers();
+    } catch (error: any) {
+      alert(error.message || "Gagal menerbitkan voucher");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-            alert("Voucher berhasil diterbitkan!");
-            setNewVoucherValue("");
-            setIsGenerating(false);
-            fetchVouchers(); // Refresh data
-        } catch (error: any) {
-            alert(error.message || "Gagal menerbitkan voucher");
-        } finally {
-            setLoading(false);
-        }
-    };
+  const filtered = vouchers.filter((v) =>
+    v.code.toLowerCase().includes(search.toLowerCase())
+  );
 
-    return (
-        <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in zoom-in duration-300">
-            <div className="flex justify-between items-center">
-                <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
-                    <Ticket className="text-rose-600" size={32} />
-                    Manajemen Voucher
-                </h1>
-                <button 
-                    onClick={() => setIsGenerating(true)}
-                    className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors font-medium shadow-sm"
-                >
-                    <Plus size={18} /> Terbitkan Voucher
-                </button>
-            </div>
+  const activeVouchers = vouchers.filter((v) => v.status === "ACTIVE");
+  const totalBalance = vouchers.reduce((a, v) => a + Number(v.balance), 0);
 
-            {/* Modal Terbitkan Voucher */}
-            {isGenerating && (
-                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200">
-                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 animate-in zoom-in-95 duration-200 relative">
-                        <button 
-                            onClick={() => setIsGenerating(false)}
-                            className="absolute right-4 top-4 text-slate-400 hover:text-slate-600"
-                        >
-                            <XCircle size={24} />
-                        </button>
-                        
-                        <h2 className="text-xl font-semibold mb-6 flex items-center gap-2 text-slate-800">
-                            <Ticket size={24} className="text-rose-600" /> Form Voucher Baru
-                        </h2>
-                        
-                        <form onSubmit={handleGenerate} className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium mb-1 text-slate-700">Nominal Voucher (Rp)</label>
-                                <input 
-                                    type="number" 
-                                    min="1"
-                                    value={newVoucherValue}
-                                    onChange={(e) => setNewVoucherValue(e.target.value)}
-                                    placeholder="Contoh: 100000"
-                                    className="w-full border-slate-300 rounded-lg p-3 text-lg focus:ring-2 focus:ring-rose-500 outline-none border"
-                                    required
-                                />
-                            </div>
-                            <div className="bg-rose-50 text-rose-800 text-sm p-4 rounded-lg flex items-start gap-3">
-                                <Ticket size={20} className="shrink-0 mt-0.5" />
-                                <p>Sistem akan secara otomatis membuat kode unik dan mencatat utang voucher pada jurnal akuntansi Anda.</p>
-                            </div>
-                            <button 
-                                type="submit"
-                                className="w-full bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white py-3 rounded-lg font-semibold transition-colors flex justify-center items-center gap-2"
-                                disabled={!newVoucherValue || loading}
-                            >
-                                {loading ? <Loader2 className="animate-spin" size={18}/> : null}
-                                {loading ? "Memproses..." : "Proses & Terbitkan"}
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* Rekap Card */}
-            <div className="grid md:grid-cols-3 gap-6">
-                <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 flex items-center gap-4">
-                    <div className="bg-slate-100 p-3 rounded-lg text-slate-600">
-                        <Ticket size={24} />
-                    </div>
-                    <div>
-                        <p className="text-sm font-medium text-slate-500">Total Voucher Aktif</p>
-                        <p className="text-2xl font-bold text-slate-800">
-                            {vouchers.filter(v => v.status === "ACTIVE").length} <span className="text-base font-normal text-slate-500">tiket</span>
-                        </p>
-                    </div>
-                </div>
-                <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 flex items-center gap-4">
-                    <div className="bg-rose-50 p-3 rounded-lg text-rose-600">
-                        <Ticket size={24} />
-                    </div>
-                    <div>
-                        <p className="text-sm font-medium text-slate-500">Total Saldo Voucher</p>
-                        <p className="text-2xl font-bold text-rose-600">
-                            {formatCurrency(vouchers.reduce((acc, v) => acc + Number(v.balance), 0))}
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            {/* List Table */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                        <input 
-                            type="text" 
-                            placeholder="Cari kode voucher..." 
-                            className="pl-10 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-rose-500 outline-none w-64"
-                        />
-                    </div>
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                        <thead>
-                            <tr className="bg-white border-b border-slate-200 text-sm text-slate-600">
-                                <th className="p-4 font-semibold">Kode Voucher</th>
-                                <th className="p-4 font-semibold">Nominal Asli</th>
-                                <th className="p-4 font-semibold">Sisa Saldo</th>
-                                <th className="p-4 font-semibold">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {vouchers.map((v) => (
-                                <tr key={v.id} className="border-b border-slate-100 hover:bg-slate-50">
-                                    <td className="p-4 font-medium text-slate-800 flex items-center gap-2">
-                                        <Ticket size={16} className="text-slate-400" /> {v.code}
-                                    </td>
-                                    <td className="p-4 text-slate-600">{formatCurrency(Number(v.value))}</td>
-                                    <td className="p-4 font-semibold text-slate-700">{formatCurrency(Number(v.balance))}</td>
-                                    <td className="p-4">
-                                        {v.status === "ACTIVE" ? (
-                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-semibold">
-                                                <CheckCircle2 size={14} /> Aktif
-                                            </span>
-                                        ) : (
-                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold">
-                                                <XCircle size={14} /> Terpakai
-                                            </span>
-                                        )}
-                                    </td>
-                                </tr>
-                            ))}
-                            {vouchers.length === 0 && (
-                                <tr>
-                                    <td colSpan={5} className="p-8 text-center text-slate-500">
-                                        Belum ada data voucher.
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+  return (
+    <div className="max-w-5xl mx-auto space-y-6">
+      {/* Toast */}
+      {success && (
+        <div className="fixed top-4 right-4 z-50 bg-rose-600 text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-2 animate-slide-up">
+          <CheckCircle2 size={18} />
+          <span className="font-semibold">Voucher berhasil diterbitkan!</span>
         </div>
-    );
+      )}
+
+      {/* Header */}
+      <div className="animate-slide-up flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="page-title flex items-center gap-2.5">
+            <Ticket className="text-rose-500" size={28} />
+            Manajemen Voucher
+          </h1>
+          <p className="page-subtitle">Kelola penerbitan dan pemantauan voucher belanja</p>
+        </div>
+        <button onClick={() => setIsGenerating(true)} className="btn btn-rose shrink-0">
+          <Plus size={17} /> Terbitkan Voucher
+        </button>
+      </div>
+
+      {/* Modal */}
+      {isGenerating && (
+        <div className="modal-overlay">
+          <div className="modal-box">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Sparkles size={20} className="text-rose-500" />
+                Terbitkan Voucher Baru
+              </h2>
+              <button
+                onClick={() => setIsGenerating(false)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors"
+              >
+                <XCircle size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleGenerate} className="space-y-4">
+              <div>
+                <label className="form-label">Nominal Voucher (Rp)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={newVoucherValue}
+                  onChange={(e) => setNewVoucherValue(e.target.value)}
+                  placeholder="Contoh: 100000"
+                  className="form-input text-lg"
+                  required
+                />
+              </div>
+
+              <div className="bg-rose-50 border border-rose-100 text-rose-700 text-sm p-4 rounded-xl flex items-start gap-3">
+                <Ticket size={17} className="shrink-0 mt-0.5 text-rose-400" />
+                <p>Kode voucher unik akan dibuat otomatis. Sistem akan mencatat utang voucher ke jurnal akuntansi.</p>
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsGenerating(false)}
+                  className="btn btn-ghost flex-1 justify-center"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={!newVoucherValue || loading}
+                  className="btn btn-rose flex-1 justify-center"
+                >
+                  {loading ? <Loader2 className="animate-spin" size={17} /> : <Ticket size={17} />}
+                  {loading ? "Memproses..." : "Terbitkan"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Stats */}
+      <div className="grid sm:grid-cols-3 gap-4 animate-slide-up-2">
+        <div className="card p-5 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
+            <Ticket size={22} />
+          </div>
+          <div>
+            <p className="text-xs text-slate-500 font-medium">Total Voucher</p>
+            <p className="text-2xl font-bold text-slate-800">{vouchers.length}</p>
+          </div>
+        </div>
+        <div className="card p-5 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-500 shrink-0">
+            <CheckCircle2 size={22} />
+          </div>
+          <div>
+            <p className="text-xs text-slate-500 font-medium">Voucher Aktif</p>
+            <p className="text-2xl font-bold text-emerald-700">{activeVouchers.length}</p>
+          </div>
+        </div>
+        <div className="card p-5 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-rose-50 flex items-center justify-center text-rose-500 shrink-0">
+            <Wallet size={22} />
+          </div>
+          <div>
+            <p className="text-xs text-slate-500 font-medium">Total Saldo</p>
+            <p className="text-lg font-bold text-rose-600">{fmt(totalBalance)}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="card overflow-hidden animate-slide-up-3">
+        <div className="section-header">
+          <h3>Daftar Voucher</h3>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+            <input
+              type="text"
+              placeholder="Cari kode..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="form-input pl-9 w-52 text-sm py-2"
+            />
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Kode Voucher</th>
+                <th className="text-right">Nominal Asli</th>
+                <th className="text-right">Sisa Saldo</th>
+                <th className="text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((v) => (
+                <tr key={v.id}>
+                  <td>
+                    <span className="inline-flex items-center gap-1.5 font-mono font-semibold text-slate-800">
+                      <Ticket size={14} className="text-rose-400" />
+                      {v.code}
+                    </span>
+                  </td>
+                  <td className="text-right text-slate-600">{fmt(Number(v.value))}</td>
+                  <td className="text-right font-semibold text-slate-800">{fmt(Number(v.balance))}</td>
+                  <td className="text-center">
+                    {v.status === "ACTIVE" ? (
+                      <span className="badge badge-emerald">
+                        <CheckCircle2 size={12} /> Aktif
+                      </span>
+                    ) : (
+                      <span className="badge badge-slate">
+                        <XCircle size={12} /> Terpakai
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={4}>
+                    <div className="empty-state">
+                      <Ticket size={36} />
+                      <p>{search ? "Voucher tidak ditemukan" : "Belum ada data voucher"}</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
 }

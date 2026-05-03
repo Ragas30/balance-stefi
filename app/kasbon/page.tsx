@@ -1,255 +1,336 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { UserRound, Store, Plus, Search, CheckCircle2, Clock, XCircle, Loader2 } from "lucide-react";
+import {
+  UserRound,
+  Store,
+  Plus,
+  Search,
+  CheckCircle2,
+  Clock,
+  XCircle,
+  Loader2,
+  Banknote,
+  AlertTriangle,
+} from "lucide-react";
 
 type Kasbon = {
-    id: string;
-    customer?: string; // from PIUTANG
-    name?: string;     // from UTANG
-    total: number;
-    paid: number;
-    status: "LUNAS" | "BELUM_LUNAS";
+  id: string;
+  name?: string;
+  customer?: string;
+  total: number;
+  paid: number;
+  status: "LUNAS" | "BELUM_LUNAS";
 };
 
 export default function KasbonPage() {
-    const [activeTab, setActiveTab] = useState<"PIUTANG" | "UTANG">("PIUTANG");
-    const [piutangData, setPiutangData] = useState<Kasbon[]>([]);
-    const [utangData, setUtangData] = useState<Kasbon[]>([]);
-    const [isGenerating, setIsGenerating] = useState(false);
-    
-    // Form state
-    const [formName, setFormName] = useState("");
-    const [formTotal, setFormTotal] = useState("");
-    const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"PIUTANG" | "UTANG">("PIUTANG");
+  const [piutangData, setPiutangData] = useState<Kasbon[]>([]);
+  const [utangData, setUtangData] = useState<Kasbon[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [formName, setFormName] = useState("");
+  const [formTotal, setFormTotal] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [success, setSuccess] = useState(false);
 
-    useEffect(() => {
-        fetchKasbon();
-    }, []);
+  useEffect(() => { fetchKasbon(); }, []);
 
-    const fetchKasbon = async () => {
-        try {
-            const res = await fetch("/api/kasbon");
-            const data = await res.json();
-            if (res.ok) {
-                // Map customer to name for unified mapping in UI
-                setPiutangData(data.piutang.map((i: any) => ({ ...i, name: i.customer })));
-                setUtangData(data.utang);
-            }
-        } catch (error) {
-            console.error(error);
-        }
-    };
+  const fetchKasbon = async () => {
+    try {
+      const res = await fetch("/api/kasbon");
+      const data = await res.json();
+      if (res.ok) {
+        setPiutangData(data.piutang.map((i: any) => ({ ...i, name: i.customer })));
+        setUtangData(data.utang);
+      }
+    } catch (e) { console.error(e); }
+  };
 
-    const formatCurrency = (val: number) => {
-        return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(val);
-    };
+  const fmt = (v: number) =>
+    new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(v);
 
-    const handleGenerate = async (e: React.FormEvent) => {
-        e.preventDefault();
-        const total = parseInt(formTotal);
-        if (!total || total <= 0 || !formName) return;
+  const handleGenerate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const total = parseInt(formTotal);
+    if (!total || total <= 0 || !formName) return;
 
-        setLoading(true);
-        try {
-            const res = await fetch("/api/kasbon", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    type: activeTab,
-                    name: formName,
-                    total: total
-                })
-            });
+    setLoading(true);
+    try {
+      const res = await fetch("/api/kasbon", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: activeTab, name: formName, total }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
 
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+      setFormName("");
+      setFormTotal("");
+      setIsGenerating(false);
+      fetchKasbon();
+    } catch (error: any) {
+      alert(error.message || "Gagal mencatat kasbon");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-            alert("Pencatatan Berhasil!");
-            setFormName("");
-            setFormTotal("");
-            setIsGenerating(false);
-            fetchKasbon();
-        } catch (error: any) {
-            alert(error.message || "Gagal mencatat kasbon");
-        } finally {
-            setLoading(false);
-        }
-    };
+  const currentData = (activeTab === "PIUTANG" ? piutangData : utangData).filter((d) =>
+    (d.name || "").toLowerCase().includes(search.toLowerCase())
+  );
 
-    const currentData = activeTab === "PIUTANG" ? piutangData : utangData;
+  const totalPiutang = piutangData.reduce((a, c) => a + (Number(c.total) - Number(c.paid)), 0);
+  const totalUtang = utangData.reduce((a, c) => a + (Number(c.total) - Number(c.paid)), 0);
 
-    return (
-        <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in zoom-in duration-300">
-            <div className="flex justify-between items-center">
-                <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
-                    <UserRound className="text-indigo-600" size={32} />
-                    Manajemen Kasbon
-                </h1>
-                <button 
-                    onClick={() => setIsGenerating(true)}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors font-medium shadow-sm"
-                >
-                    <Plus size={18} /> {activeTab === "PIUTANG" ? "Catat Piutang Baru" : "Catat Utang Baru"}
-                </button>
-            </div>
-
-            {/* Modal Form */}
-            {isGenerating && (
-                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200">
-                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 animate-in zoom-in-95 duration-200 relative">
-                        <button 
-                            onClick={() => setIsGenerating(false)}
-                            className="absolute right-4 top-4 text-slate-400 hover:text-slate-600"
-                        >
-                            <XCircle size={24} />
-                        </button>
-                        
-                        <h2 className="text-xl font-semibold mb-6 flex items-center gap-2 text-slate-800">
-                            {activeTab === "PIUTANG" ? <UserRound size={24} className="text-indigo-600" /> : <Store size={24} className="text-orange-600" />} 
-                            Form {activeTab === "PIUTANG" ? "Piutang" : "Utang"} Baru
-                        </h2>
-                        
-                        <form onSubmit={handleGenerate} className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium mb-1 text-slate-700">{activeTab === "PIUTANG" ? "Nama Pelanggan / Karyawan" : "Nama Supplier / Toko"}</label>
-                                <input 
-                                    type="text" 
-                                    value={formName}
-                                    onChange={(e) => setFormName(e.target.value)}
-                                    placeholder="Contoh: Budi Santoso"
-                                    className="w-full border-slate-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500 outline-none border"
-                                    required
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium mb-1 text-slate-700">Total Pinjaman (Rp)</label>
-                                <input 
-                                    type="number" 
-                                    min="1"
-                                    value={formTotal}
-                                    onChange={(e) => setFormTotal(e.target.value)}
-                                    placeholder="Contoh: 100000"
-                                    className="w-full border-slate-300 rounded-lg p-3 text-lg focus:ring-2 focus:ring-indigo-500 outline-none border"
-                                    required
-                                />
-                            </div>
-                            <div className="bg-indigo-50 text-indigo-800 text-sm p-4 rounded-lg flex items-start gap-3">
-                                <Clock size={20} className="shrink-0 mt-0.5" />
-                                <p>Sistem akan secara otomatis menjurnal transaksi ini sebagai pengeluaran pinjaman (Kas/Hutang/Piutang).</p>
-                            </div>
-                            <button 
-                                type="submit"
-                                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-3 rounded-lg font-semibold transition-colors flex justify-center items-center gap-2"
-                                disabled={!formName || !formTotal || loading}
-                            >
-                                {loading ? <Loader2 className="animate-spin" size={18}/> : null}
-                                {loading ? "Menyimpan..." : "Simpan Pencatatan"}
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* Rekap Card */}
-            <div className="grid md:grid-cols-2 gap-6">
-                <div 
-                    onClick={() => setActiveTab("PIUTANG")}
-                    className={`cursor-pointer rounded-xl p-6 shadow-sm border transition-all ${activeTab === "PIUTANG" ? "bg-white border-indigo-500 ring-1 ring-indigo-500" : "bg-slate-50 border-slate-200 hover:bg-white"}`}
-                >
-                    <div className="flex items-center gap-4">
-                        <div className={`p-4 rounded-xl ${activeTab === "PIUTANG" ? "bg-indigo-100 text-indigo-600" : "bg-slate-200 text-slate-500"}`}>
-                            <UserRound size={32} />
-                        </div>
-                        <div>
-                            <p className="text-sm font-medium text-slate-500 mb-1">Piutang (Pelanggan/Karyawan)</p>
-                            <h3 className="text-2xl font-bold text-slate-800">
-                                {formatCurrency(piutangData.reduce((acc, curr) => acc + (Number(curr.total) - Number(curr.paid)), 0))}
-                            </h3>
-                            <p className="text-xs text-slate-500 mt-1">Total tagihan yang belum dibayar ke toko</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div 
-                    onClick={() => setActiveTab("UTANG")}
-                    className={`cursor-pointer rounded-xl p-6 shadow-sm border transition-all ${activeTab === "UTANG" ? "bg-white border-indigo-500 ring-1 ring-indigo-500" : "bg-slate-50 border-slate-200 hover:bg-white"}`}
-                >
-                    <div className="flex items-center gap-4">
-                        <div className={`p-4 rounded-xl ${activeTab === "UTANG" ? "bg-orange-100 text-orange-600" : "bg-slate-200 text-slate-500"}`}>
-                            <Store size={32} />
-                        </div>
-                        <div>
-                            <p className="text-sm font-medium text-slate-500 mb-1">Utang (Supplier/Toko)</p>
-                            <h3 className="text-2xl font-bold text-slate-800">
-                                {formatCurrency(utangData.reduce((acc, curr) => acc + (Number(curr.total) - Number(curr.paid)), 0))}
-                            </h3>
-                            <p className="text-xs text-slate-500 mt-1">Total kewajiban toko yang harus dibayar</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* List Table */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-                    <h2 className="font-semibold text-slate-700">
-                        {activeTab === "PIUTANG" ? "Daftar Piutang Aktif Jangka Pendek" : "Daftar Utang Jatuh Tempo"}
-                    </h2>
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                        <input 
-                            type="text" 
-                            placeholder="Cari nama..." 
-                            className="pl-10 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none w-64"
-                        />
-                    </div>
-                </div>
-                
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                        <thead>
-                            <tr className="bg-white border-b border-slate-200 text-sm text-slate-600">
-                                <th className="p-4 font-semibold">{activeTab === "PIUTANG" ? "Nama Pelanggan" : "Nama Supplier"}</th>
-                                <th className="p-4 font-semibold text-right">Total Tagihan</th>
-                                <th className="p-4 font-semibold text-right">Sudah Dibayar</th>
-                                <th className="p-4 font-semibold text-right">Sisa / Kurang</th>
-                                <th className="p-4 font-semibold text-center">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {currentData.map((item) => (
-                                <tr key={item.id} className="border-b border-slate-100 hover:bg-slate-50">
-                                    <td className="p-4 font-medium text-slate-800">{item.name}</td>
-                                    <td className="p-4 text-right text-slate-700">{formatCurrency(Number(item.total))}</td>
-                                    <td className="p-4 text-right text-emerald-600">{formatCurrency(Number(item.paid))}</td>
-                                    <td className="p-4 text-right font-semibold text-rose-600">
-                                        {formatCurrency(Number(item.total) - Number(item.paid))}
-                                    </td>
-                                    <td className="p-4 text-center">
-                                        {item.status === "LUNAS" ? (
-                                            <span className="inline-flex flex-col items-center gap-1 text-emerald-600 text-xs font-semibold">
-                                                <CheckCircle2 size={18} /> Lunas
-                                            </span>
-                                        ) : (
-                                            <span className="inline-flex flex-col items-center gap-1 text-orange-500 text-xs font-semibold">
-                                                <Clock size={18} /> Belum Lunas
-                                            </span>
-                                        )}
-                                    </td>
-                                </tr>
-                            ))}
-                            {currentData.length === 0 && (
-                                <tr>
-                                    <td colSpan={7} className="p-8 text-center text-slate-500">
-                                        Belum ada data.
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+  return (
+    <div className="max-w-6xl mx-auto space-y-6">
+      {/* Toast */}
+      {success && (
+        <div className="fixed top-4 right-4 z-50 bg-indigo-600 text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-2 animate-slide-up">
+          <CheckCircle2 size={18} />
+          <span className="font-semibold">Kasbon berhasil dicatat!</span>
         </div>
-    );
+      )}
+
+      {/* Header */}
+      <div className="animate-slide-up flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="page-title flex items-center gap-2.5">
+            <UserRound className="text-amber-500" size={28} />
+            Manajemen Kasbon
+          </h1>
+          <p className="page-subtitle">Kelola piutang pelanggan dan utang supplier</p>
+        </div>
+        <button
+          onClick={() => setIsGenerating(true)}
+          className={`btn shrink-0 ${activeTab === "PIUTANG" ? "btn-primary" : "btn-rose"}`}
+        >
+          <Plus size={17} />
+          {activeTab === "PIUTANG" ? "Catat Piutang" : "Catat Utang"}
+        </button>
+      </div>
+
+      {/* Modal */}
+      {isGenerating && (
+        <div className="modal-overlay">
+          <div className="modal-box">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                {activeTab === "PIUTANG" ? (
+                  <UserRound size={20} className="text-indigo-500" />
+                ) : (
+                  <Store size={20} className="text-amber-500" />
+                )}
+                Catat {activeTab === "PIUTANG" ? "Piutang Baru" : "Utang Baru"}
+              </h2>
+              <button
+                onClick={() => setIsGenerating(false)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors"
+              >
+                <XCircle size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleGenerate} className="space-y-4">
+              <div>
+                <label className="form-label">
+                  {activeTab === "PIUTANG" ? "Nama Pelanggan / Karyawan" : "Nama Supplier / Toko"}
+                </label>
+                <input
+                  type="text"
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                  placeholder="Contoh: Budi Santoso"
+                  className="form-input"
+                  required
+                />
+              </div>
+              <div>
+                <label className="form-label">Jumlah (Rp)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={formTotal}
+                  onChange={(e) => setFormTotal(e.target.value)}
+                  placeholder="Contoh: 500000"
+                  className="form-input text-lg"
+                  required
+                />
+              </div>
+
+              <div
+                className={`text-sm p-4 rounded-xl flex items-start gap-3 ${
+                  activeTab === "PIUTANG"
+                    ? "bg-indigo-50 border border-indigo-100 text-indigo-700"
+                    : "bg-amber-50 border border-amber-100 text-amber-700"
+                }`}
+              >
+                <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                <p>
+                  {activeTab === "PIUTANG"
+                    ? "Sistem akan mencatat Piutang (Debit) dan Pendapatan (Kredit) di jurnal."
+                    : "Sistem akan mencatat Persediaan (Debit) dan Hutang (Kredit) di jurnal."}
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button type="button" onClick={() => setIsGenerating(false)} className="btn btn-ghost flex-1 justify-center">
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={!formName || !formTotal || loading}
+                  className={`btn flex-1 justify-center ${activeTab === "PIUTANG" ? "btn-primary" : "btn-rose"}`}
+                >
+                  {loading ? <Loader2 className="animate-spin" size={17} /> : <Banknote size={17} />}
+                  {loading ? "Menyimpan..." : "Simpan"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Tab Cards */}
+      <div className="grid sm:grid-cols-2 gap-4 animate-slide-up-2">
+        {/* Piutang */}
+        <div
+          onClick={() => setActiveTab("PIUTANG")}
+          className={`card p-6 cursor-pointer transition-all duration-200 ${
+            activeTab === "PIUTANG"
+              ? "ring-2 ring-indigo-500 border-indigo-200"
+              : "hover:border-slate-300"
+          }`}
+        >
+          <div className="flex items-center gap-4">
+            <div
+              className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-colors ${
+                activeTab === "PIUTANG" ? "bg-indigo-100 text-indigo-600" : "bg-slate-100 text-slate-400"
+              }`}
+            >
+              <UserRound size={28} />
+            </div>
+            <div className="flex-1">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                Piutang Pelanggan
+              </p>
+              <h3 className="text-xl font-bold text-slate-800">{fmt(totalPiutang)}</h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {piutangData.filter((d) => d.status === "BELUM_LUNAS").length} tagihan belum lunas
+              </p>
+            </div>
+            {activeTab === "PIUTANG" && (
+              <div className="w-2 h-10 bg-indigo-500 rounded-full" />
+            )}
+          </div>
+        </div>
+
+        {/* Utang */}
+        <div
+          onClick={() => setActiveTab("UTANG")}
+          className={`card p-6 cursor-pointer transition-all duration-200 ${
+            activeTab === "UTANG"
+              ? "ring-2 ring-amber-400 border-amber-200"
+              : "hover:border-slate-300"
+          }`}
+        >
+          <div className="flex items-center gap-4">
+            <div
+              className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-colors ${
+                activeTab === "UTANG" ? "bg-amber-100 text-amber-600" : "bg-slate-100 text-slate-400"
+              }`}
+            >
+              <Store size={28} />
+            </div>
+            <div className="flex-1">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                Utang Supplier
+              </p>
+              <h3 className="text-xl font-bold text-slate-800">{fmt(totalUtang)}</h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {utangData.filter((d) => d.status === "BELUM_LUNAS").length} kewajiban belum lunas
+              </p>
+            </div>
+            {activeTab === "UTANG" && (
+              <div className="w-2 h-10 bg-amber-400 rounded-full" />
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="card overflow-hidden animate-slide-up-3">
+        <div className="section-header">
+          <h3>
+            {activeTab === "PIUTANG" ? "Daftar Piutang" : "Daftar Utang"}
+          </h3>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+            <input
+              type="text"
+              placeholder="Cari nama..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="form-input pl-9 w-52 text-sm py-2"
+            />
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>{activeTab === "PIUTANG" ? "Nama Pelanggan" : "Nama Supplier"}</th>
+                <th className="text-right">Total Tagihan</th>
+                <th className="text-right">Sudah Dibayar</th>
+                <th className="text-right">Sisa</th>
+                <th className="text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {currentData.map((item) => {
+                const sisa = Number(item.total) - Number(item.paid);
+                return (
+                  <tr key={item.id}>
+                    <td className="font-medium text-slate-800">{item.name}</td>
+                    <td className="text-right text-slate-600">{fmt(Number(item.total))}</td>
+                    <td className="text-right text-emerald-600 font-medium">{fmt(Number(item.paid))}</td>
+                    <td className="text-right">
+                      <span className={`font-bold ${sisa > 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                        {fmt(sisa)}
+                      </span>
+                    </td>
+                    <td className="text-center">
+                      {item.status === "LUNAS" ? (
+                        <span className="badge badge-emerald">
+                          <CheckCircle2 size={12} /> Lunas
+                        </span>
+                      ) : (
+                        <span className="badge badge-amber">
+                          <Clock size={12} /> Belum Lunas
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {currentData.length === 0 && (
+                <tr>
+                  <td colSpan={5}>
+                    <div className="empty-state">
+                      <UserRound size={36} />
+                      <p>{search ? "Data tidak ditemukan" : "Belum ada data kasbon"}</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
 }

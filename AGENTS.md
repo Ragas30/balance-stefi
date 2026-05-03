@@ -380,3 +380,39 @@ GET /api/report
 * Gunakan validasi Zod di semua input
 
 ---
+
+# 🧩 CATATAN DISKUSI (KEEP)
+
+## Arah Simplifikasi (disepakati, belum full migrasi)
+
+- Fokus utama aplikasi diarahkan ke pencatatan kas sederhana:
+  - Pemasukan
+  - Pengeluaran
+  - Analisa Laba/Rugi
+- COA tidak menjadi kebutuhan utama operasional harian pada mode sederhana.
+- Relasi transaksi dengan kasbon tetap dipertahankan.
+- Fitur import tetap wajib tersedia.
+
+## Mode Laporan (disepakati)
+
+- Laporan laba rugi memiliki mode:
+  - `summary` (ringkas)
+  - `detailed` (detail + keterangan transaksi)
+- Laporan mendukung export:
+  - Excel
+  - PDF
+
+## Catatan Implementasi Saat Ini
+
+- Mode laporan dan export sudah ditambahkan di endpoint laporan laba-rugi.
+- Export Excel sementara menggunakan format CSV kompatibel Excel.
+- Export PDF menggunakan generator PDF ringan internal.
+- Upgrade ke `.xlsx` native dan layout PDF lanjutan dilakukan setelah environment package install normal.
+
+## Prinsip Lanjutan
+
+- Backend tetap menjadi sumber kebenaran perhitungan laba/rugi.
+- Hindari logika hitung laporan di frontend.
+- Pertahankan validasi input ketat (Zod) untuk semua endpoint.
+
+---

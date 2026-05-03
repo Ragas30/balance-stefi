@@ -1,13 +1,10 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
 import './globals.css'
 import Sidebar from '@/components/Sidebar'
 
-const inter = Inter({ subsets: ['latin'] })
-
 export const metadata: Metadata = {
-  title: 'SMK FinSystem',
-  description: 'Sistem Laporan Keuangan Minimarket',
+  title: 'STEFI Finance — Sistem Keuangan Minimarket',
+  description: 'Sistem Laporan Keuangan Minimarket Modern',
 }
 
 export default function RootLayout({
@@ -17,11 +14,21 @@ export default function RootLayout({
 }) {
   return (
     <html lang="id">
-      <body className={`${inter.className} bg-slate-50 text-slate-900 flex`}>
-        <Sidebar />
-        <main className="flex-1 p-8 h-screen overflow-y-auto">
-          {children}
-        </main>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+          rel="stylesheet"
+        />
+      </head>
+      <body className="bg-mesh min-h-screen">
+        <div className="relative flex min-h-screen flex-col md:flex-row">
+          <Sidebar />
+          <main className="flex-1 p-4 md:h-screen md:overflow-y-auto md:p-8 md:pl-6">
+            {children}
+          </main>
+        </div>
       </body>
     </html>
   )

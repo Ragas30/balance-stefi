@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { calculateLabaRugi } from "@/lib/report";
+import { calculateLabaRugi, type LabaRugiLine, type LabaRugiMode } from "@/lib/report";
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
+    const mode = (searchParams.get("mode") ?? "summary") as LabaRugiMode;
 
     let transactionFilter: any = undefined;
 
@@ -29,7 +30,8 @@ export async function GET(req: Request) {
         }
       },
       include: {
-        account: true
+        account: true,
+        transaction: true
       }
     });
 
@@ -60,9 +62,29 @@ export async function GET(req: Request) {
         return acc;
     }, {});
 
+    const lines: LabaRugiLine[] = mode === "detailed"
+      ? details.map((d) => {
+          const debit = Number(d.debit);
+          const credit = Number(d.credit);
+          const amount = d.account.type === "REVENUE" ? (credit - debit) : (debit - credit);
+          return {
+            date: d.transaction.date.toISOString(),
+            description: d.transaction.description,
+            accountCode: d.account.code,
+            accountName: d.account.name,
+            type: d.account.type as "REVENUE" | "EXPENSE",
+            debit,
+            credit,
+            amount
+          };
+        })
+      : [];
+
     return NextResponse.json({
         summary,
-        breakdown: Object.values(breakdown)
+        breakdown: Object.values(breakdown),
+        mode,
+        lines
     });
 
   } catch (error: any) {

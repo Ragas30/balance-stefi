@@ -18,7 +18,7 @@ model Account {
 }
 
 enum AccountType {
-  ASSET
+  ASSET3
   LIABILITY
   EQUITY
   REVENUE

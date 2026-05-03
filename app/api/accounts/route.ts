@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     // Cek duplikasi kode
     const existing = await prisma.account.findUnique({
       where: { code: data.code },
-    });
+    }); 
 
     if (existing) {
       return NextResponse.json(
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
     console.error("API Error [Accounts]:", error);
     if (error instanceof z.ZodError) {
       const err = error as any;
-      return NextResponse.json({ error: err.errors ? err.errors.map((e: any) => e.message).join(", ") : "Validasi input gagal." }, { status: 400 });
+      return NextResponse.json({ error: err.issues.length ? err.issues.map((e: any) => e.message).join(", ") : "Validasi input gagal." }, { status: 400 });
     }
     let message = error.message || "Gagal membuat akun.";
     if (error.code === 'P2002') message = "Kode COA sudah digunakan! Harap gunakan kode akun lain.";

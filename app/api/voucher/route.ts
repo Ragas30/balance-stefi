@@ -67,7 +67,7 @@ export async function POST(req: Request) {
         console.error("API Error [Voucher]:", error);
         if (error instanceof z.ZodError) {
             const err = error as any;
-            return NextResponse.json({ error: err.errors ? err.errors.map((e: any) => e.message).join(", ") : "Validasi input gagal." }, { status: 400 });
+            return NextResponse.json({ error: err.issues.length ? err.issues.map((e: any) => e.message).join(", ") : "Validasi input gagal." }, { status: 400 });
         }
         let message = error.message || "Gagal memproses voucher.";
         if (error.code === 'P2002') message = "Kode Voucher tersebut sudah digunakan! Harap coba kode lain.";

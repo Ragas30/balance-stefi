@@ -15,7 +15,7 @@ export function calculateLabaRugi(details: { account: { type: string }, debit: D
     for (const d of details) {
         if (d.account.type === "REVENUE") {
             revenue = revenue.add(d.credit).sub(d.debit);
-        } else if (d.account.type === "EXPENSE") {``
+        } else if (d.account.type === "EXPENSE") {
             expense = expense.add(d.debit).sub(d.credit);
         }
     }
@@ -26,3 +26,16 @@ export function calculateLabaRugi(details: { account: { type: string }, debit: D
         laba: parseFloat(revenue.sub(expense).toString())
     };
 }
+
+export type LabaRugiMode = "summary" | "detailed";
+
+export type LabaRugiLine = {
+    date: string;
+    description: string;
+    accountCode: string;
+    accountName: string;
+    type: "REVENUE" | "EXPENSE";
+    debit: number;
+    credit: number;
+    amount: number;
+};
