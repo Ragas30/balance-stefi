@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { firestore, docsWithId } from "@/lib/firebase-admin";
 import { z } from "zod";
 import { getErrorMessage, getZodIssueMessage } from "@/lib/utils";
 
@@ -11,9 +11,8 @@ const accountSchema = z.object({
 
 export async function GET() {
   try {
-    const accounts = await prisma.account.findMany({
-      orderBy: { code: "asc" },
-    });
+    const snap = await firestore.collection("accounts").orderBy("code").get();
+    const accounts = docsWithId(snap);
     return NextResponse.json(accounts);
   } catch (error: unknown) {
     console.error("API Error [Accounts GET]:", error);
@@ -27,21 +26,33 @@ export async function POST(req: Request) {
     const body = await req.json();
     const data = accountSchema.parse(body);
 
-    // Cek duplikasi kode
-    const existing = await prisma.account.findUnique({
-      where: { code: data.code },
-    }); 
+    const dup = await firestore
+      .collection("accounts")
+      .where("code", "==", data.code)
+      .limit(1)
+      .get();
 
-    if (existing) {
+    if (!dup.empty) {
       return NextResponse.json(
         { error: `Akun dengan kode ${data.code} sudah ada.` },
         { status: 400 }
       );
     }
 
-    const account = await prisma.account.create({
-      data,
+    const ref = await firestore.collection("accounts").add({
+      code: data.code,
+      name: data.name,
+      type: data.type,
+      createdAt: new Date(),
     });
+
+    const account = {
+      id: ref.id,
+      code: data.code,
+      name: data.name,
+      type: data.type,
+      createdAt: new Date().toISOString(),
+    };
 
     return NextResponse.json(account, { status: 201 });
   } catch (error: unknown) {
@@ -49,10 +60,6 @@ export async function POST(req: Request) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: getZodIssueMessage(error) }, { status: 400 });
     }
-    let message = getErrorMessage(error, "Gagal membuat akun.");
-    if (typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2002") {
-      message = "Kode COA sudah digunakan! Harap gunakan kode akun lain.";
-    }
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: getErrorMessage(error, "Gagal membuat akun.") }, { status: 500 });
   }
 }

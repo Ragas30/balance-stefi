@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
-import { calculateLabaRugi, type LabaRugiLine, type LabaRugiMode } from "@/lib/report";
+import { calculateLabaRugi, fetchJournalDetails, type LabaRugiLine, type LabaRugiMode } from "@/lib/report";
 import { getErrorMessage } from "@/lib/utils";
 
-type DateFilter = { gte?: Date; lte?: Date };
 type BreakdownItem = {
   id: string;
   name: string;
@@ -19,36 +17,23 @@ export async function GET(req: Request) {
     const endDate = searchParams.get("endDate");
     const mode = (searchParams.get("mode") ?? "summary") as LabaRugiMode;
 
-    let transactionFilter: DateFilter | undefined;
-
-    if (startDate || endDate) {
-        transactionFilter = {};
-        if (startDate) transactionFilter.gte = new Date(startDate);
-        // Set to end of day if endDate is provided
-        if (endDate) {
-            const end = new Date(endDate);
-            end.setHours(23, 59, 59, 999);
-            transactionFilter.lte = end;
-        }
+    let start: Date | undefined;
+    let end: Date | undefined;
+    if (startDate) start = new Date(startDate);
+    if (endDate) {
+      end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
     }
 
-    const details = await prisma.transactionDetail.findMany({
-      where: {
-        transaction: transactionFilter ? { date: transactionFilter } : undefined,
-        account: {
-          type: { in: ["REVENUE", "EXPENSE"] }
-        }
-      },
-      include: {
-        account: true,
-        transaction: true
-      }
-    });
+    const details = await fetchJournalDetails({ start, end });
+    const filtered = details.filter(
+      (d) => d.account.type === "REVENUE" || d.account.type === "EXPENSE"
+    );
 
-    const summary = calculateLabaRugi(details);
+    const summary = calculateLabaRugi(filtered);
 
     // Hitung breakdown per akun
-    const breakdown = details.reduce<Record<string, BreakdownItem>>((acc, curr) => {
+    const breakdown = filtered.reduce<Record<string, BreakdownItem>>((acc, curr) => {
         const accId = curr.account.id;
         if (!acc[accId]) {
             acc[accId] = {
@@ -59,35 +44,33 @@ export async function GET(req: Request) {
                 total: 0
             };
         }
-        
-        const debit = Number(curr.debit);
-        const credit = Number(curr.credit);
 
         if (curr.account.type === "REVENUE") {
-            acc[accId].total += (credit - debit);
+            acc[accId].total += (curr.credit - curr.debit);
         } else {
-            acc[accId].total += (debit - credit);
+            acc[accId].total += (curr.debit - curr.credit);
         }
 
         return acc;
     }, {});
 
     const lines: LabaRugiLine[] = mode === "detailed"
-      ? details.map((d) => {
-          const debit = Number(d.debit);
-          const credit = Number(d.credit);
-          const amount = d.account.type === "REVENUE" ? (credit - debit) : (debit - credit);
-          return {
-            date: d.transaction.date.toISOString(),
-            description: d.transaction.description,
-            accountCode: d.account.code,
-            accountName: d.account.name,
-            type: d.account.type as "REVENUE" | "EXPENSE",
-            debit,
-            credit,
-            amount
-          };
-        })
+      ? filtered
+          .slice()
+          .sort((a, b) => a.date.getTime() - b.date.getTime())
+          .map((d) => {
+            const amount = d.account.type === "REVENUE" ? (d.credit - d.debit) : (d.debit - d.credit);
+            return {
+              date: d.date.toISOString(),
+              description: d.description,
+              accountCode: d.account.code,
+              accountName: d.account.name,
+              type: d.account.type as "REVENUE" | "EXPENSE",
+              debit: d.debit,
+              credit: d.credit,
+              amount
+            };
+          })
       : [];
 
     return NextResponse.json({

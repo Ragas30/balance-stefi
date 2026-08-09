@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { firestore, toDate, toNumber } from "@/lib/firebase-admin";
+import { fetchJournalDetails } from "@/lib/report";
 import { getErrorMessage } from "@/lib/utils";
+import type { Query, DocumentData } from "firebase-admin/firestore";
 
 type ReportMode = "summary" | "detailed";
 
@@ -34,14 +36,13 @@ export async function GET(req: Request) {
     const endDate = searchParams.get("endDate");
     const mode = (searchParams.get("mode") ?? "summary") as ReportMode;
 
-    const dateFilter: { gte?: Date; lte?: Date } = {};
-    if (startDate) dateFilter.gte = new Date(startDate);
+    let start: Date | undefined;
+    let end: Date | undefined;
+    if (startDate) start = new Date(startDate);
     if (endDate) {
-      const end = new Date(endDate);
+      end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
-      dateFilter.lte = end;
     }
-    const hasDateFilter = Object.keys(dateFilter).length > 0;
 
     // --- 1. Query from CashTransaction (simple mode) ---
     let cashIncome = 0;
@@ -49,43 +50,41 @@ export async function GET(req: Request) {
     const cashLines: LineItem[] = [];
     const cashBreakdownMap = new Map<string, BreakdownItem>();
 
-    try {
-      const cashTx = await prisma.cashTransaction.findMany({
-        where: hasDateFilter ? { date: dateFilter } : undefined,
-        orderBy: [{ date: "asc" }, { createdAt: "asc" }],
-      });
+    let query: Query<DocumentData, DocumentData> = firestore.collection("cashTransactions");
+    if (start) query = query.where("date", ">=", start);
+    if (end) query = query.where("date", "<=", end);
 
-      for (const tx of cashTx) {
-        const amount = Number(tx.amount);
-        if (tx.type === "INCOME") cashIncome += amount;
-        if (tx.type === "EXPENSE") cashExpense += amount;
+    const cashSnap = await query.get();
+    for (const doc of cashSnap.docs) {
+      const tx = doc.data();
+      const amount = toNumber(tx.amount);
+      const type = tx.type as "INCOME" | "EXPENSE";
+      if (type === "INCOME") cashIncome += amount;
+      if (type === "EXPENSE") cashExpense += amount;
 
-        const key = `${tx.type}::${tx.category}`;
-        const current = cashBreakdownMap.get(key);
-        if (!current) {
-          cashBreakdownMap.set(key, {
-            category: tx.category,
-            type: tx.type,
-            total: amount,
-          });
-        } else {
-          current.total += amount;
-        }
-
-        cashLines.push({
-          id: tx.id,
-          date: tx.date.toISOString(),
-          description: tx.description,
+      const key = `${type}::${tx.category}`;
+      const current = cashBreakdownMap.get(key);
+      if (!current) {
+        cashBreakdownMap.set(key, {
           category: tx.category,
-          type: tx.type,
-          amount,
-          source: tx.source,
-          kasbonType: tx.kasbonType,
-          kasbonRef: tx.kasbonRef,
+          type,
+          total: amount,
         });
+      } else {
+        current.total += amount;
       }
-    } catch {
-      // Table may not exist yet — skip
+
+      cashLines.push({
+        id: doc.id,
+        date: toDate(tx.date).toISOString(),
+        description: tx.description,
+        category: tx.category,
+        type,
+        amount,
+        source: tx.source ?? "MANUAL",
+        kasbonType: tx.kasbonType ?? null,
+        kasbonRef: tx.kasbonRef ?? null,
+      });
     }
 
     // --- 2. Query from Transaction/TransactionDetail (double-entry) ---
@@ -93,46 +92,29 @@ export async function GET(req: Request) {
     let journalExpense = 0;
     const journalLines: LineItem[] = [];
 
-    try {
-      const details = await prisma.transactionDetail.findMany({
-        where: {
-          transaction: hasDateFilter ? { date: dateFilter } : undefined,
-          account: {
-            type: { in: ["REVENUE", "EXPENSE"] },
-          },
-        },
-        include: {
-          account: true,
-          transaction: true,
-        },
+    const details = await fetchJournalDetails({ start, end });
+
+    for (const d of details) {
+      const accType = d.account.type as string;
+      const flowType = ACCOUNT_TYPE_MAP[accType];
+      if (!flowType) continue;
+
+      const amount = flowType === "INCOME" ? d.credit - d.debit : d.debit - d.credit;
+
+      if (flowType === "INCOME") journalIncome += amount;
+      else journalExpense += amount;
+
+      journalLines.push({
+        id: d.id,
+        date: d.date.toISOString(),
+        description: d.description,
+        category: `${d.account.code} - ${d.account.name}`,
+        type: flowType,
+        amount,
+        source: "JURNAL",
+        kasbonType: null,
+        kasbonRef: null,
       });
-
-      for (const d of details) {
-        const debit = Number(d.debit);
-        const credit = Number(d.credit);
-        const accType = d.account.type as string;
-        const flowType = ACCOUNT_TYPE_MAP[accType];
-        if (!flowType) continue;
-
-        const amount = flowType === "INCOME" ? credit - debit : debit - credit;
-
-        if (flowType === "INCOME") journalIncome += amount;
-        else journalExpense += amount;
-
-        journalLines.push({
-          id: d.id,
-          date: d.transaction.date.toISOString(),
-          description: d.transaction.description,
-          category: `${d.account.code} - ${d.account.name}`,
-          type: flowType,
-          amount,
-          source: "JURNAL",
-          kasbonType: null,
-          kasbonRef: null,
-        });
-      }
-    } catch {
-      // Table may not exist yet
     }
 
     // --- 3. Merge results ---
@@ -172,20 +154,6 @@ export async function GET(req: Request) {
     });
   } catch (error: unknown) {
     console.error("API Error [Simple Report GET]:", error);
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      (error as { code?: string }).code === "P2021"
-    ) {
-      return NextResponse.json({
-        summary: { income: 0, expense: 0, laba: 0 },
-        breakdown: [],
-        mode: "summary",
-        lines: [],
-        warning: "Tabel belum tersedia. Jalankan migrasi Prisma.",
-      });
-    }
     return NextResponse.json({ error: getErrorMessage(error, "Gagal menghitung laporan simple.") }, { status: 500 });
   }
 }

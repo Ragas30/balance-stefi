@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { firestore } from "@/lib/firebase-admin";
 import { z } from "zod";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -98,17 +98,16 @@ export async function POST(req: Request) {
           kasbonRef: idx.kasbonRef >= 0 ? cells[idx.kasbonRef] : undefined,
         });
 
-        await prisma.cashTransaction.create({
-          data: {
-            date: new Date(parsed.date),
-            type: parsed.type,
-            category: parsed.category,
-            amount: parsed.amount,
-            description: parsed.description,
-            source: parsed.source ?? "IMPORT",
-            kasbonType: parsed.kasbonType,
-            kasbonRef: parsed.kasbonRef,
-          },
+        await firestore.collection("cashTransactions").add({
+          date: new Date(parsed.date),
+          type: parsed.type,
+          category: parsed.category,
+          amount: parsed.amount,
+          description: parsed.description,
+          source: parsed.source ?? "IMPORT",
+          kasbonType: parsed.kasbonType ?? null,
+          kasbonRef: parsed.kasbonRef ?? null,
+          createdAt: new Date(),
         });
 
         result.inserted += 1;

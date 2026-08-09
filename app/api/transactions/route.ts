@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { firestore, toDate, docWithId, toPlain } from "@/lib/firebase-admin";
 import { z } from "zod";
 import { getErrorMessage, getZodIssueMessage } from "@/lib/utils";
+import type { Query, DocumentData } from "firebase-admin/firestore";
 
 const transactionSchema = z.object({
   date: z.string().or(z.date()),
@@ -20,18 +21,22 @@ export async function GET(req: Request) {
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
 
-    const dateFilter: { gte?: Date; lte?: Date } = {};
-    if (startDate) dateFilter.gte = new Date(startDate);
+    let query: Query<DocumentData, DocumentData> = firestore.collection("cashTransactions");
+    if (startDate) query = query.where("date", ">=", new Date(startDate));
     if (endDate) {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
-      dateFilter.lte = end;
+      query = query.where("date", "<=", end);
     }
 
-    const transactions = await prisma.cashTransaction.findMany({
-      where: Object.keys(dateFilter).length ? { date: dateFilter } : undefined,
-      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-    });
+    const snap = await query.get();
+    const transactions: Record<string, unknown>[] = snap.docs
+      .map((doc) => docWithId(doc))
+      .sort(
+        (a, b) =>
+          toDate(b.date).getTime() - toDate(a.date).getTime() ||
+          String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? ""))
+      );
 
     return NextResponse.json(transactions);
   } catch (error: unknown) {
@@ -49,18 +54,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "kasbonRef wajib diisi untuk transaksi kasbon." }, { status: 400 });
     }
 
-    const created = await prisma.cashTransaction.create({
-      data: {
-        date: new Date(data.date),
-        type: data.type,
-        category: data.category,
-        amount: data.amount,
-        description: data.description,
-        source: data.source ?? "MANUAL",
-        kasbonType: data.kasbonType,
-        kasbonRef: data.kasbonRef,
-      },
-    });
+    const record = {
+      date: new Date(data.date),
+      type: data.type,
+      category: data.category,
+      amount: data.amount,
+      description: data.description,
+      source: data.source ?? "MANUAL",
+      kasbonType: data.kasbonType ?? null,
+      kasbonRef: data.kasbonRef ?? null,
+      createdAt: new Date(),
+    };
+
+    const ref = await firestore.collection("cashTransactions").add(record);
+    const created = { id: ref.id, ...(toPlain(record) as Record<string, unknown>) };
 
     return NextResponse.json(created, { status: 201 });
   } catch (error: unknown) {

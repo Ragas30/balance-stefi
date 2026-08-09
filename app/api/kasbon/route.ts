@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
-import { buildJournalPayload, getOrCreateAccount } from "@/lib/accounting";
+import { firestore, docsWithId, toPlain } from "@/lib/firebase-admin";
+import { createJournal, ensureAccounts } from "@/lib/accounting";
 import { z } from "zod";
 import { getErrorMessage, getZodIssueMessage } from "@/lib/utils";
 
@@ -12,11 +12,17 @@ const kasbonSchema = z.object({
 
 export async function GET() {
     try {
-        const [piutang, utang] = await Promise.all([
-            prisma.receivable.findMany({ orderBy: { id: "desc" } }),
-            prisma.payable.findMany({ orderBy: { id: "desc" } })
+        const [piutangSnap, utangSnap] = await Promise.all([
+            firestore.collection("receivables").get(),
+            firestore.collection("payables").get(),
         ]);
-        
+
+        const sortDesc = (list: Record<string, unknown>[]) =>
+            list.sort((a, b) => String(b.id).localeCompare(String(a.id)));
+
+        const piutang = sortDesc(docsWithId(piutangSnap));
+        const utang = sortDesc(docsWithId(utangSnap));
+
         return NextResponse.json({ piutang, utang });
     } catch (error: unknown) {
         console.error("API Error [Kasbon GET]:", error);
@@ -30,55 +36,61 @@ export async function POST(req: Request) {
         const body = await req.json();
         const data = kasbonSchema.parse(body);
 
-        const result = await prisma.$transaction(async (tx) => {
+        const result = await firestore.runTransaction(async (t) => {
+            let debitCode = "";
+            let creditCode = "";
             let entity;
-            let debitAccountId = "";
-            let creditAccountId = "";
 
             if (data.type === "PIUTANG") {
-                // Pinjaman Uang Kasbon Karyawan/Customer via Kas
-                entity = await tx.receivable.create({
-                    data: {
-                        customer: data.name,
-                        total: data.total,
-                        paid: 0,
-                        status: "BELUM_LUNAS"
-                    }
-                });
-
-                debitAccountId = await getOrCreateAccount(tx, "1120", "Piutang Usaha", "ASSET");
-                creditAccountId = await getOrCreateAccount(tx, "1110", "Kas", "ASSET");
-                
+                entity = {
+                    customer: data.name,
+                    total: data.total,
+                    paid: 0,
+                    status: "BELUM_LUNAS",
+                    createdAt: new Date(),
+                };
+                debitCode = "1120";
+                creditCode = "1110";
             } else {
-                // Pinjaman Barang Toko via Supplier
-                entity = await tx.payable.create({
-                    data: {
-                        name: data.name,
-                        total: data.total,
-                        paid: 0,
-                        status: "BELUM_LUNAS"
-                    }
-                });
-
-                debitAccountId = await getOrCreateAccount(tx, "1130", "Persediaan Barang", "ASSET");
-                creditAccountId = await getOrCreateAccount(tx, "2110", "Hutang Usaha", "LIABILITY");
+                entity = {
+                    name: data.name,
+                    total: data.total,
+                    paid: 0,
+                    status: "BELUM_LUNAS",
+                    createdAt: new Date(),
+                };
+                debitCode = "1130";
+                creditCode = "2110";
             }
 
-            // Generate Journal
-            const journalPayload = buildJournalPayload({
+            const accountIds = await ensureAccounts(t, [
+                {
+                    code: debitCode,
+                    name: debitCode === "1120" ? "Piutang Usaha" : "Persediaan Barang",
+                    type: "ASSET",
+                },
+                {
+                    code: creditCode,
+                    name: creditCode === "1110" ? "Kas" : "Hutang Usaha",
+                    type: creditCode === "1110" ? "ASSET" : "LIABILITY",
+                },
+            ]);
+
+            const entityRef = firestore.collection(
+                data.type === "PIUTANG" ? "receivables" : "payables"
+            ).doc();
+            t.set(entityRef, entity);
+
+            createJournal(t, {
                 date: new Date(),
                 description: `Pencatatan ${data.type} ${data.name}`,
                 details: [
-                    { accountId: debitAccountId, debit: data.total, credit: 0 },
-                    { accountId: creditAccountId, debit: 0, credit: data.total }
-                ]
+                    { accountId: accountIds[debitCode], debit: data.total, credit: 0 },
+                    { accountId: accountIds[creditCode], debit: 0, credit: data.total },
+                ],
             });
 
-            await tx.transaction.create({
-                data: journalPayload
-            });
-
-            return entity;
+            return { id: entityRef.id, ...(toPlain(entity) as Record<string, unknown>) };
         });
 
         return NextResponse.json(result, { status: 201 });

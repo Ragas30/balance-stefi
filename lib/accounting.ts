@@ -1,72 +1,99 @@
-import { Prisma } from "@prisma/client";
+import { firestore } from "@/lib/firebase-admin";
+import { toNumber } from "@/lib/firebase-admin";
+import type { Transaction } from "firebase-admin/firestore";
 
-/**
- * Validates that the sum of all debits equals the sum of all credits in a transaction.
- * @param details Array of transaction details containing string or number debit and credit.
- * @returns boolean True if balanced, False otherwise.
- */
+export type JournalDetailInput = { accountId: string; debit: number; credit: number };
+export type AccountSpec = { code: string; name: string; type: string };
+
 export function isJournalBalanced(
     details: { debit: number | string; credit: number | string }[]
 ): boolean {
-    const sumDebit = details.reduce((acc, curr) => acc + Number(curr.debit), 0);
-    const sumCredit = details.reduce((acc, curr) => acc + Number(curr.credit), 0);
-    
+    const sumDebit = details.reduce((acc, curr) => acc + toNumber(curr.debit), 0);
+    const sumCredit = details.reduce((acc, curr) => acc + toNumber(curr.credit), 0);
+
     // Using a tiny epsilon for float comparison safety
     return Math.abs(sumDebit - sumCredit) < 0.0001;
 }
 
-/**
- * Generates an accounting journal payload for Prisma based on provided debits and credits.
- * Automatically validates if the journal is balanced before proceeding.
- */
-export function buildJournalPayload({
-    date,
-    description,
-    details
-}: {
-    date: Date;
-    description: string;
-    details: { accountId: string; debit: number; credit: number }[];
-}) {
+export function assertJournalBalanced(
+    details: { debit: number | string; credit: number | string }[]
+) {
     if (!isJournalBalanced(details)) {
         throw new Error("Jurnal tidak seimbang: Total Debit harus sama dengan Total Kredit.");
     }
-
-    return {
-        date,
-        description,
-        details: {
-            create: details.map(d => ({
-                accountId: d.accountId,
-                debit: d.debit,
-                credit: d.credit
-            }))
-        }
-    };
 }
 
-/**
- * Gets an account by its code, or creates it if it doesn't exist.
- */
-export async function getOrCreateAccount(
-    tx: Prisma.TransactionClient,
-    code: string, 
-    name: string, 
-    type: "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE"
-) {
-    const existing = await tx.account.findUnique({
-        where: { code }
+export async function ensureAccounts(
+    t: Transaction,
+    specs: AccountSpec[]
+): Promise<Record<string, string>> {
+    const uniqueSpecs = [...new Map(specs.map((s) => [s.code, s])).values()];
+
+    const reads = uniqueSpecs.map((s) =>
+        t.get(firestore.collection("accounts").where("code", "==", s.code).limit(1))
+    );
+    const snapshots = await Promise.all(reads);
+
+    const ids: Record<string, string> = {};
+    uniqueSpecs.forEach((s, i) => {
+        if (!snapshots[i].empty) ids[s.code] = snapshots[i].docs[0].id;
     });
-    
-    if (existing) return existing.id;
-    
-    const newAccount = await tx.account.create({
-        data: {
-            code,
-            name,
-            type
+
+    for (const s of uniqueSpecs) {
+        if (!ids[s.code]) {
+            const ref = firestore.collection("accounts").doc();
+            ids[s.code] = ref.id;
+            t.set(ref, { code: s.code, name: s.name, type: s.type, createdAt: new Date() });
+        }
+    }
+
+    return ids;
+}
+
+export function createJournal(
+    t: Transaction,
+    opts: { date: Date; description: string; details: JournalDetailInput[] }
+): string {
+    const { date, description, details } = opts;
+    assertJournalBalanced(details);
+
+    const txRef = firestore.collection("transactions").doc();
+    t.set(txRef, { date, description, createdAt: new Date() });
+
+    for (const d of details) {
+        const detRef = txRef.collection("details").doc();
+        t.set(detRef, {
+            transactionId: txRef.id,
+            accountId: d.accountId,
+            debit: d.debit,
+            credit: d.credit,
+        });
+    }
+
+    return txRef.id;
+}
+
+export async function getAccountsMap(
+    ids: string[]
+): Promise<Map<string, { id: string; code: string; name: string; type: string }>> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return new Map();
+
+    const refs = unique.map((id) => firestore.collection("accounts").doc(id));
+    const snapshots = await firestore.getAll(...refs);
+
+    const map = new Map<string, { id: string; code: string; name: string; type: string }>();
+    snapshots.forEach((snap) => {
+        if (snap.exists) {
+            const data = snap.data();
+            map.set(snap.id, {
+                id: snap.id,
+                code: data?.code ?? "",
+                name: data?.name ?? "",
+                type: data?.type ?? "",
+            });
         }
     });
-    
-    return newAccount.id;
+
+    return map;
 }

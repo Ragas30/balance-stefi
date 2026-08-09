@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { firestore, toDate, toNumber, docWithId } from "@/lib/firebase-admin";
 import { getErrorMessage } from "@/lib/utils";
+import type { Query, DocumentData } from "firebase-admin/firestore";
 
 type ExportFormat = "excel" | "pdf";
 type ReportMode = "summary" | "detailed";
@@ -56,35 +57,39 @@ export async function GET(req: Request) {
     const mode = (searchParams.get("mode") ?? "summary") as ReportMode;
     const format = (searchParams.get("format") ?? "excel") as ExportFormat;
 
-    const dateFilter: { gte?: Date; lte?: Date } = {};
-    if (startDate) dateFilter.gte = new Date(startDate);
+    let start: Date | undefined;
+    let end: Date | undefined;
+    if (startDate) start = new Date(startDate);
     if (endDate) {
-      const end = new Date(endDate);
+      end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
-      dateFilter.lte = end;
     }
 
-    const list = await prisma.cashTransaction.findMany({
-      where: Object.keys(dateFilter).length ? { date: dateFilter } : undefined,
-      orderBy: [{ date: "asc" }, { createdAt: "asc" }],
-    });
+    let query: Query<DocumentData, DocumentData> = firestore.collection("cashTransactions");
+    if (start) query = query.where("date", ">=", start);
+    if (end) query = query.where("date", "<=", end);
+
+    const snap = await query.get();
+    const list: Record<string, unknown>[] = snap.docs
+      .map((doc) => docWithId(doc))
+      .sort((a, b) => toDate(a.date).getTime() - toDate(b.date).getTime());
 
     let income = 0;
     let expense = 0;
 
     const rows: Row[] = list.map((tx) => {
-      const amount = Number(tx.amount);
+      const amount = toNumber(tx.amount);
       if (tx.type === "INCOME") income += amount;
       if (tx.type === "EXPENSE") expense += amount;
 
       return {
-        date: tx.date.toISOString().slice(0, 10),
-        description: tx.description,
-        category: tx.category,
-        type: tx.type,
+        date: toDate(tx.date).toISOString().slice(0, 10),
+        description: String(tx.description ?? ""),
+        category: String(tx.category ?? ""),
+        type: tx.type as "INCOME" | "EXPENSE",
         amount,
-        source: tx.source,
-        kasbonRef: tx.kasbonRef ?? "",
+        source: (tx.source ?? "MANUAL") as Row["source"],
+        kasbonRef: String(tx.kasbonRef ?? ""),
       };
     });
 

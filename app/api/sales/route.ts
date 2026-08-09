@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
-import { buildJournalPayload, getOrCreateAccount } from "@/lib/accounting";
+import { firestore, toNumber } from "@/lib/firebase-admin";
+import { createJournal, ensureAccounts } from "@/lib/accounting";
 import { z } from "zod";
 import { getErrorMessage, getZodIssueMessage } from "@/lib/utils";
 
@@ -22,91 +22,91 @@ export async function POST(req: Request) {
     try {
         const body = await req.json();
         const data = saleSchema.parse(body);
-        
+
         const date = new Date(data.date);
         const totalAmount = data.details.reduce((sum, item) => sum + (item.qty * item.price), 0);
 
-        // Execute in a giant transaction
-        const result = await prisma.$transaction(async (tx) => {
-            // 1. Process Payment Methods (Voucher / Kasbon constraints)
+        const result = await firestore.runTransaction(async (t) => {
+            // 1. Validate payment constraints (read phase)
+            let voucherSnap = null;
             if (data.paymentMethod === "VOUCHER") {
                 if (!data.voucherCode) throw new Error("Kode Voucher wajib diisi.");
-                const voucher = await tx.voucher.findUnique({ where: { code: data.voucherCode } });
-                if (!voucher) throw new Error("Voucher tidak ditemukan.");
-                if (Number(voucher.balance) < totalAmount) {
+                voucherSnap = await t.get(
+                    firestore.collection("vouchers").where("code", "==", data.voucherCode).limit(1)
+                );
+                if (voucherSnap.empty) throw new Error("Voucher tidak ditemukan.");
+                const voucher = voucherSnap.docs[0].data();
+                if (toNumber(voucher.balance) < totalAmount) {
                     throw new Error("Saldo voucher tidak mencukupi.");
                 }
-                
-                // Deduct voucher balance
-                const newBalance = Number(voucher.balance) - totalAmount;
-                await tx.voucher.update({
-                    where: { id: voucher.id },
-                    data: { 
-                        balance: newBalance,
-                        status: newBalance <= 0 ? "USED" : "ACTIVE"
-                    }
-                });
             } else if (data.paymentMethod === "KASBON") {
                 if (!data.customerName) throw new Error("Nama Pelanggan wajib diisi untuk Kasbon.");
-                
-                // Create Receivable
-                await tx.receivable.create({
-                    data: {
-                        customer: data.customerName,
-                        total: totalAmount,
-                        paid: 0,
-                        status: "BELUM_LUNAS"
-                    }
+            }
+
+            // 2. Resolve accounts
+            const accountSpecs = [
+                { code: "4110", name: "Pendapatan Penjualan", type: "REVENUE" },
+                data.paymentMethod === "CASH"
+                    ? { code: "1110", name: "Kas", type: "ASSET" }
+                    : data.paymentMethod === "VOUCHER"
+                        ? { code: "2120", name: "Hutang Voucher", type: "LIABILITY" }
+                        : { code: "1120", name: "Piutang Usaha", type: "ASSET" },
+            ];
+            const accountIds = await ensureAccounts(t, accountSpecs);
+
+            // 3. Deduct voucher balance
+            if (voucherSnap) {
+                const vDoc = voucherSnap.docs[0];
+                const v = vDoc.data();
+                const newBalance = toNumber(v.balance) - totalAmount;
+                t.set(vDoc.ref, { ...v, balance: newBalance, status: newBalance <= 0 ? "USED" : "ACTIVE" });
+            }
+
+            // 4. Create Receivable for Kasbon
+            if (data.paymentMethod === "KASBON") {
+                const ref = firestore.collection("receivables").doc();
+                t.set(ref, {
+                    customer: data.customerName,
+                    total: totalAmount,
+                    paid: 0,
+                    status: "BELUM_LUNAS",
+                    createdAt: new Date(),
                 });
             }
 
-            // 2. Create Sale record
-            const sale = await tx.sale.create({
-                data: {
-                    date,
-                    total: totalAmount,
-                    details: {
-                        create: data.details.map(d => ({
-                            // Menyimpan label produk bebas ke kolom productId existing
-                            productId: d.label,
-                            qty: d.qty,
-                            price: d.price
-                        }))
-                    }
-                }
-            });
+            // 5. Create Sale record
+            const saleRef = firestore.collection("sales").doc();
+            t.set(saleRef, { date, total: totalAmount, createdAt: new Date() });
+            for (const d of data.details) {
+                t.set(saleRef.collection("details").doc(), {
+                    saleId: saleRef.id,
+                    productId: d.label,
+                    qty: d.qty,
+                    price: d.price,
+                });
+            }
 
-            // 3. Generate Journal Double-Entry
-            const pendapatanAccountId = await getOrCreateAccount(tx, "4110", "Pendapatan Penjualan", "REVENUE");
-            
-            let debitAccountId = "";
-            let description = `Penjualan #${sale.id}`;
-
+            // 6. Generate Journal Double-Entry
+            const debitCode = accountSpecs[1].code;
+            let description = `Penjualan #${saleRef.id}`;
             if (data.paymentMethod === "CASH") {
-                debitAccountId = await getOrCreateAccount(tx, "1110", "Kas", "ASSET");
                 description += " (Cash)";
             } else if (data.paymentMethod === "VOUCHER") {
-                debitAccountId = await getOrCreateAccount(tx, "2120", "Hutang Voucher", "LIABILITY");
                 description += ` (Voucher ${data.voucherCode})`;
             } else if (data.paymentMethod === "KASBON") {
-                debitAccountId = await getOrCreateAccount(tx, "1120", "Piutang Usaha", "ASSET");
                 description += ` (Kasbon: ${data.customerName})`;
             }
 
-            const journalPayload = buildJournalPayload({
+            createJournal(t, {
                 date,
                 description,
                 details: [
-                    { accountId: debitAccountId, debit: totalAmount, credit: 0 },
-                    { accountId: pendapatanAccountId, debit: 0, credit: totalAmount }
-                ]
+                    { accountId: accountIds[debitCode], debit: totalAmount, credit: 0 },
+                    { accountId: accountIds["4110"], debit: 0, credit: totalAmount },
+                ],
             });
 
-            await tx.transaction.create({
-                data: journalPayload
-            });
-
-            return sale;
+            return { id: saleRef.id, date, total: totalAmount, details: data.details };
         });
 
         return NextResponse.json(result, { status: 201 });

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { fetchJournalDetails } from "@/lib/report";
 import { getErrorMessage } from "@/lib/utils";
 
 type ReportMode = "summary" | "detailed";
@@ -14,20 +14,6 @@ type ReportRow = {
   credit: number;
   amount: number;
 };
-
-function parseDateRange(startDate?: string | null, endDate?: string | null) {
-  let transactionFilter: { gte?: Date; lte?: Date } | undefined;
-  if (startDate || endDate) {
-    transactionFilter = {};
-    if (startDate) transactionFilter.gte = new Date(startDate);
-    if (endDate) {
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      transactionFilter.lte = end;
-    }
-  }
-  return transactionFilter;
-}
 
 function getReportTitle(startDate?: string | null, endDate?: string | null) {
   if (startDate || endDate) {
@@ -116,35 +102,33 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Format export tidak valid." }, { status: 400 });
     }
 
-    const transactionFilter = parseDateRange(startDate, endDate);
+    let start: Date | undefined;
+    let end: Date | undefined;
+    if (startDate) start = new Date(startDate);
+    if (endDate) {
+      end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+    }
 
-    const details = await prisma.transactionDetail.findMany({
-      where: {
-        transaction: transactionFilter ? { date: transactionFilter } : undefined,
-        account: { type: { in: ["REVENUE", "EXPENSE"] } },
-      },
-      include: {
-        account: true,
-        transaction: true,
-      },
-      orderBy: [{ transaction: { date: "asc" } }, { account: { code: "asc" } }],
-    });
+    const details = await fetchJournalDetails({ start, end });
 
     let revenue = 0;
     let expense = 0;
 
     const rows: ReportRow[] = details
+      .filter((d) => d.account.type === "REVENUE" || d.account.type === "EXPENSE")
+      .sort((a, b) => a.date.getTime() - b.date.getTime() || a.account.code.localeCompare(b.account.code))
       .map((d): ReportRow => {
-        const debit = Number(d.debit);
-        const credit = Number(d.credit);
+        const debit = d.debit;
+        const credit = d.credit;
         const amount = d.account.type === "REVENUE" ? credit - debit : debit - credit;
 
         if (d.account.type === "REVENUE") revenue += amount;
         else expense += amount;
 
         return {
-          date: d.transaction.date.toISOString().slice(0, 10),
-          description: d.transaction.description,
+          date: d.date.toISOString().slice(0, 10),
+          description: d.description,
           account: `${d.account.code} - ${d.account.name}`,
           type: d.account.type === "REVENUE" ? "Pendapatan" : "Beban",
           debit,

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
-import { buildJournalPayload, getOrCreateAccount } from "@/lib/accounting";
+import { firestore, docsWithId, toPlain } from "@/lib/firebase-admin";
+import { createJournal, ensureAccounts } from "@/lib/accounting";
 import { z } from "zod";
 import { getErrorMessage, getZodIssueMessage } from "@/lib/utils";
 
@@ -11,9 +11,8 @@ const voucherSchema = z.object({
 
 export async function GET() {
     try {
-        const vouchers = await prisma.voucher.findMany({
-            orderBy: { id: "desc" }
-        });
+        const snap = await firestore.collection("vouchers").get();
+        const vouchers = docsWithId(snap).sort((a, b) => String(b.id).localeCompare(String(a.id)));
         return NextResponse.json(vouchers);
     } catch (error: unknown) {
         console.error("API Error [Voucher GET]:", error);
@@ -27,40 +26,37 @@ export async function POST(req: Request) {
         const body = await req.json();
         const data = voucherSchema.parse(body);
 
-        const result = await prisma.$transaction(async (tx) => {
-            // Check constraint
-            const existing = await tx.voucher.findUnique({ where: { code: data.code } });
-            if (existing) throw new Error("Kode Voucher sudah digunakan");
+        const result = await firestore.runTransaction(async (t) => {
+            const dup = await t.get(
+                firestore.collection("vouchers").where("code", "==", data.code).limit(1)
+            );
+            if (!dup.empty) throw new Error("Kode Voucher sudah digunakan");
 
-            // 1. Create Voucher
-            const voucher = await tx.voucher.create({
-                data: {
-                    code: data.code,
-                    value: data.value,
-                    balance: data.value,
-                    status: "ACTIVE"
-                }
-            });
+            const accountIds = await ensureAccounts(t, [
+                { code: "1110", name: "Kas", type: "ASSET" },
+                { code: "2120", name: "Hutang Voucher", type: "LIABILITY" },
+            ]);
 
-            // 2. Generate Journal 
-            // Kas (Debit) vs Hutang Voucher (Kredit)
-            const kasAccountId = await getOrCreateAccount(tx, "1110", "Kas", "ASSET");
-            const hutangVoucherId = await getOrCreateAccount(tx, "2120", "Hutang Voucher", "LIABILITY");
+            const ref = firestore.collection("vouchers").doc();
+            const voucher = {
+                code: data.code,
+                value: data.value,
+                balance: data.value,
+                status: "ACTIVE",
+                createdAt: new Date(),
+            };
+            t.set(ref, voucher);
 
-            const journalPayload = buildJournalPayload({
+            createJournal(t, {
                 date: new Date(),
                 description: `Penerbitan Voucher ${data.code}`,
                 details: [
-                    { accountId: kasAccountId, debit: data.value, credit: 0 },
-                    { accountId: hutangVoucherId, debit: 0, credit: data.value }
-                ]
+                    { accountId: accountIds["1110"], debit: data.value, credit: 0 },
+                    { accountId: accountIds["2120"], debit: 0, credit: data.value },
+                ],
             });
 
-            await tx.transaction.create({
-                data: journalPayload
-            });
-
-            return voucher;
+            return { id: ref.id, ...(toPlain(voucher) as Record<string, unknown>) };
         });
 
         return NextResponse.json(result, { status: 201 });
@@ -69,10 +65,7 @@ export async function POST(req: Request) {
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: getZodIssueMessage(error) }, { status: 400 });
         }
-        let message = getErrorMessage(error, "Gagal memproses voucher.");
-        if (typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2002") {
-            message = "Kode Voucher tersebut sudah digunakan! Harap coba kode lain.";
-        }
+        const message = getErrorMessage(error, "Gagal memproses voucher.");
         return NextResponse.json({ error: message }, { status: 500 });
     }
 }

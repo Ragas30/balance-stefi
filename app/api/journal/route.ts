@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
-import { buildJournalPayload } from "@/lib/accounting";
+import { firestore, toIso, toNumber } from "@/lib/firebase-admin";
+import { assertJournalBalanced, createJournal, getAccountsMap } from "@/lib/accounting";
 import { z } from "zod";
 import { getErrorMessage, getZodIssueMessage } from "@/lib/utils";
+import type { Query, DocumentData } from "firebase-admin/firestore";
 
 const journalDetailSchema = z.object({
-  accountId: z.string().uuid("Invalid Account ID"),
+  accountId: z.string().min(1, "Invalid Account ID"),
   debit: z.number().min(0),
   credit: z.number().min(0),
 });
@@ -19,22 +20,48 @@ const journalSchema = z.object({
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const startDate = searchParams.get('startDate');
-    const endDate = searchParams.get('endDate');
+    const startDate = searchParams.get("startDate");
+    const endDate = searchParams.get("endDate");
 
-    const dateFilter: { gte?: Date; lte?: Date } = {};
-    if (startDate) dateFilter.gte = new Date(startDate);
-    if (endDate) dateFilter.lte = new Date(endDate);
+    let query: Query<DocumentData, DocumentData> = firestore.collection("transactions");
+    if (startDate) query = query.where("date", ">=", new Date(startDate));
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      query = query.where("date", "<=", end);
+    }
 
-    const transactions = await prisma.transaction.findMany({
-      where: Object.keys(dateFilter).length > 0 ? { date: dateFilter } : undefined,
-      include: {
-        details: {
-          include: { account: true }
-        }
-      },
-      orderBy: { date: "desc" },
-    });
+    const snap = await query.get();
+    const transactions = [];
+
+    for (const doc of snap.docs) {
+      const data = doc.data();
+      const detSnap = await doc.ref.collection("details").get();
+      const accountIds = detSnap.docs.map((d) => d.data().accountId);
+      const accounts = await getAccountsMap(accountIds);
+
+      const details = detSnap.docs.map((d) => {
+        const det = d.data();
+        return {
+          id: d.id,
+          transactionId: det.transactionId ?? doc.id,
+          accountId: det.accountId,
+          debit: toNumber(det.debit),
+          credit: toNumber(det.credit),
+          account: accounts.get(det.accountId) ?? null,
+        };
+      });
+
+      transactions.push({
+        id: doc.id,
+        date: toIso(data.date),
+        description: data.description,
+        createdAt: toIso(data.createdAt),
+        details,
+      });
+    }
+
+    transactions.sort((a, b) => b.date.localeCompare(a.date));
 
     return NextResponse.json(transactions);
   } catch (error: unknown) {
@@ -49,38 +76,52 @@ export async function POST(req: Request) {
     const body = await req.json();
     const parsedData = journalSchema.parse(body);
 
-    // Pastikan tanggal adalah Date object
     const date = new Date(parsedData.date);
+    assertJournalBalanced(parsedData.details);
 
-    // Gunakan fungsi lib/accounting.ts untuk memvalidasi dan membuild payload prisma
-    let payload: ReturnType<typeof buildJournalPayload>;
-    try {
-        payload = buildJournalPayload({
-            date,
-            description: parsedData.description,
-            details: parsedData.details
-        });
-    } catch (accError: unknown) {
-        return NextResponse.json({ error: getErrorMessage(accError, "Validasi jurnal gagal.") }, { status: 400 });
-    }
-
-    // Insert menggunakan transaksi (meskipun Prisma sudah menanganinya dengan nested create, kita eksplisit untuk kejelasan)
-    const transaction = await prisma.$transaction(async (tx) => {
-        return await tx.transaction.create({
-            data: payload,
-            include: {
-                details: {
-                    include: { account: true }
-                }
-            }
-        });
+    const transactionId = await firestore.runTransaction(async (t) => {
+      return createJournal(t, {
+        date,
+        description: parsedData.description,
+        details: parsedData.details,
+      });
     });
 
-    return NextResponse.json(transaction, { status: 201 });
+    const txDoc = await firestore.collection("transactions").doc(transactionId).get();
+    const data = txDoc.data();
+    const detSnap = await txDoc.ref.collection("details").get();
+    const accountIds = detSnap.docs.map((d) => d.data().accountId);
+    const accounts = await getAccountsMap(accountIds);
+
+    const details = detSnap.docs.map((d) => {
+      const det = d.data();
+      return {
+        id: d.id,
+        transactionId,
+        accountId: det.accountId,
+        debit: toNumber(det.debit),
+        credit: toNumber(det.credit),
+        account: accounts.get(det.accountId) ?? null,
+      };
+    });
+
+    return NextResponse.json(
+      {
+        id: transactionId,
+        date: toIso(data?.date),
+        description: data?.description,
+        createdAt: toIso(data?.createdAt),
+        details,
+      },
+      { status: 201 }
+    );
   } catch (error: unknown) {
     console.error("API Error [Journal]:", error);
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: getZodIssueMessage(error) }, { status: 400 });
+    }
+    if (error instanceof Error && error.message.includes("Jurnal tidak seimbang")) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
     const message = getErrorMessage(error, "Gagal menyimpan jurnal.");
     return NextResponse.json({ error: message }, { status: 500 });
