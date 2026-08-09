@@ -1,6 +1,16 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { calculateLabaRugi, type LabaRugiLine, type LabaRugiMode } from "@/lib/report";
+import { getErrorMessage } from "@/lib/utils";
+
+type DateFilter = { gte?: Date; lte?: Date };
+type BreakdownItem = {
+  id: string;
+  name: string;
+  code: string;
+  type: "REVENUE" | "EXPENSE";
+  total: number;
+};
 
 export async function GET(req: Request) {
   try {
@@ -9,7 +19,7 @@ export async function GET(req: Request) {
     const endDate = searchParams.get("endDate");
     const mode = (searchParams.get("mode") ?? "summary") as LabaRugiMode;
 
-    let transactionFilter: any = undefined;
+    let transactionFilter: DateFilter | undefined;
 
     if (startDate || endDate) {
         transactionFilter = {};
@@ -38,14 +48,14 @@ export async function GET(req: Request) {
     const summary = calculateLabaRugi(details);
 
     // Hitung breakdown per akun
-    const breakdown = details.reduce((acc: any, curr) => {
+    const breakdown = details.reduce<Record<string, BreakdownItem>>((acc, curr) => {
         const accId = curr.account.id;
         if (!acc[accId]) {
             acc[accId] = {
                 id: accId,
                 name: curr.account.name,
                 code: curr.account.code,
-                type: curr.account.type,
+                type: curr.account.type as "REVENUE" | "EXPENSE",
                 total: 0
             };
         }
@@ -87,9 +97,9 @@ export async function GET(req: Request) {
         lines
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("API Error [Laba Rugi GET]:", error);
-    let message = error.message || "Gagal menghitung Laba Rugi.";
+    const message = getErrorMessage(error, "Gagal menghitung Laba Rugi.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

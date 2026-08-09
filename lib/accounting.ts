@@ -1,13 +1,12 @@
 import { Prisma } from "@prisma/client";
-type Decimal = Prisma.Decimal;
 
 /**
  * Validates that the sum of all debits equals the sum of all credits in a transaction.
- * @param details Array of transaction details containing string, number, or Decimal debit and credit.
+ * @param details Array of transaction details containing string or number debit and credit.
  * @returns boolean True if balanced, False otherwise.
  */
 export function isJournalBalanced(
-    details: { debit: number | string | Decimal; credit: number | string | Decimal }[]
+    details: { debit: number | string; credit: number | string }[]
 ): boolean {
     const sumDebit = details.reduce((acc, curr) => acc + Number(curr.debit), 0);
     const sumCredit = details.reduce((acc, curr) => acc + Number(curr.credit), 0);
@@ -50,7 +49,7 @@ export function buildJournalPayload({
  * Gets an account by its code, or creates it if it doesn't exist.
  */
 export async function getOrCreateAccount(
-    tx: any, 
+    tx: Prisma.TransactionClient,
     code: string, 
     name: string, 
     type: "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE"

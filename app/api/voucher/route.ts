@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { buildJournalPayload, getOrCreateAccount } from "@/lib/accounting";
 import { z } from "zod";
+import { getErrorMessage, getZodIssueMessage } from "@/lib/utils";
 
 const voucherSchema = z.object({
     value: z.number().min(1, "Nominal harus lebih dari 0"),
@@ -14,9 +15,9 @@ export async function GET() {
             orderBy: { id: "desc" }
         });
         return NextResponse.json(vouchers);
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("API Error [Voucher GET]:", error);
-        let message = error.message || "Gagal memuat daftar voucher.";
+        const message = getErrorMessage(error, "Gagal memuat daftar voucher.");
         return NextResponse.json({ error: message }, { status: 500 });
     }
 }
@@ -63,14 +64,15 @@ export async function POST(req: Request) {
         });
 
         return NextResponse.json(result, { status: 201 });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("API Error [Voucher]:", error);
         if (error instanceof z.ZodError) {
-            const err = error as any;
-            return NextResponse.json({ error: err.issues.length ? err.issues.map((e: any) => e.message).join(", ") : "Validasi input gagal." }, { status: 400 });
+            return NextResponse.json({ error: getZodIssueMessage(error) }, { status: 400 });
         }
-        let message = error.message || "Gagal memproses voucher.";
-        if (error.code === 'P2002') message = "Kode Voucher tersebut sudah digunakan! Harap coba kode lain.";
+        let message = getErrorMessage(error, "Gagal memproses voucher.");
+        if (typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2002") {
+            message = "Kode Voucher tersebut sudah digunakan! Harap coba kode lain.";
+        }
         return NextResponse.json({ error: message }, { status: 500 });
     }
 }

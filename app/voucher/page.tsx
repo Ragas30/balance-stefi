@@ -11,6 +11,7 @@ import {
   Sparkles,
   Wallet,
 } from "lucide-react";
+import Toast from "@/components/Toast";
 
 type Voucher = {
   id: string;
@@ -25,6 +26,7 @@ export default function VoucherPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [newVoucherValue, setNewVoucherValue] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [success, setSuccess] = useState(false);
 
@@ -62,8 +64,8 @@ export default function VoucherPage() {
       setNewVoucherValue("");
       setIsGenerating(false);
       fetchVouchers();
-    } catch (error: any) {
-      alert(error.message || "Gagal menerbitkan voucher");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Gagal menerbitkan voucher");
     } finally {
       setLoading(false);
     }
@@ -78,13 +80,8 @@ export default function VoucherPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
-      {/* Toast */}
-      {success && (
-        <div className="fixed top-4 right-4 z-50 bg-rose-600 text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-2 animate-slide-up">
-          <CheckCircle2 size={18} />
-          <span className="font-semibold">Voucher berhasil diterbitkan!</span>
-        </div>
-      )}
+      <Toast show={success} message="Voucher berhasil diterbitkan!" onClose={() => setSuccess(false)} />
+      <Toast show={!!error} message={error} type="error" onClose={() => setError("")} />
 
       {/* Header */}
       <div className="animate-slide-up flex flex-col sm:flex-row sm:items-center justify-between gap-4">

@@ -12,10 +12,11 @@ import {
   Banknote,
   CreditCard,
   UserRound,
+  AlertCircle,
 } from "lucide-react";
+import Toast from "@/components/Toast";
 
-type Product = { id: string; name: string; price: number; stock: number };
-type PenjualanItem = { id: string; productId: string; qty: number; price: number };
+type PenjualanItem = { id: string; label: string; qty: number; price: number };
 
 const METHOD_CONFIG: Record<
   string,
@@ -27,25 +28,18 @@ const METHOD_CONFIG: Record<
 };
 
 export default function PenjualanPage() {
-  const [products, setProducts] = useState<Product[]>([]);
   const [items, setItems] = useState<PenjualanItem[]>([
-    { id: "1", productId: "", qty: 1, price: 0 },
+    { id: "1", label: "", qty: 1, price: 0 },
   ]);
   const [paymentMethod, setPaymentMethod] = useState("CASH");
   const [voucherCode, setVoucherCode] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/products")
-      .then((r) => r.json())
-      .then((d) => setProducts(d))
-      .catch(console.error);
-  }, []);
+  const [error, setError] = useState("");
 
   const addItem = () =>
-    setItems([...items, { id: Date.now().toString(), productId: "", qty: 1, price: 0 }]);
+    setItems([...items, { id: Date.now().toString(), label: "", qty: 1, price: 0 }]);
 
   const removeItem = (id: string) => {
     if (items.length === 1) return;
@@ -56,12 +50,7 @@ export default function PenjualanPage() {
     setItems(
       items.map((item) => {
         if (item.id !== id) return item;
-        const updated = { ...item, [field]: value };
-        if (field === "productId") {
-          const prod = products.find((p) => p.id === value);
-          if (prod) updated.price = Number(prod.price);
-        }
-        return updated;
+        return { ...item, [field]: value };
       })
     );
   };
@@ -71,12 +60,26 @@ export default function PenjualanPage() {
 
   const fmt = (v: number) =>
     new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(v);
+  const [showProducts, setShowProducts] = useState(false);
+  const [products, setProducts] = useState<{ id: string; name: string; price: number }[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+
+  useEffect(() => {
+    if (showProducts && !products.length) {
+      setLoadingProducts(true);
+      fetch("/api/products")
+        .then(async (r) => { if (!r.ok) throw new Error(); return r.json(); })
+        .then((data) => { if (Array.isArray(data)) setProducts(data); })
+        .catch(() => {})
+        .finally(() => setLoadingProducts(false));
+    }
+  }, [showProducts, products.length]);
 
   const handleSave = async () => {
-    const validItems = items.filter((i) => i.productId && i.qty > 0 && i.price >= 0);
-    if (!validItems.length) return alert("Pilih minimal 1 produk");
-    if (paymentMethod === "VOUCHER" && !voucherCode) return alert("Kode Voucher wajib diisi");
-    if (paymentMethod === "KASBON" && !customerName) return alert("Nama Kasbon wajib diisi");
+    const validItems = items.filter((i) => i.label.trim() && i.qty > 0 && i.price >= 0);
+    if (!validItems.length) return setError("Isi minimal 1 produk");
+    if (paymentMethod === "VOUCHER" && !voucherCode) return setError("Kode Voucher wajib diisi");
+    if (paymentMethod === "KASBON" && !customerName) return setError("Nama Kasbon wajib diisi");
 
     setLoading(true);
     try {
@@ -89,7 +92,7 @@ export default function PenjualanPage() {
           voucherCode: paymentMethod === "VOUCHER" ? voucherCode : undefined,
           customerName: paymentMethod === "KASBON" ? customerName : undefined,
           details: validItems.map((i) => ({
-            productId: i.productId,
+            label: i.label.trim(),
             qty: i.qty,
             price: i.price,
           })),
@@ -100,11 +103,11 @@ export default function PenjualanPage() {
 
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
-      setItems([{ id: Date.now().toString(), productId: "", qty: 1, price: 0 }]);
+      setItems([{ id: Date.now().toString(), label: "", qty: 1, price: 0 }]);
       setVoucherCode("");
       setCustomerName("");
-    } catch (e: any) {
-      alert(e.message || "Gagal menyimpan penjualan");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Gagal menyimpan penjualan");
     } finally {
       setLoading(false);
     }
@@ -112,13 +115,8 @@ export default function PenjualanPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
-      {/* Success Toast */}
-      {success && (
-        <div className="fixed top-4 right-4 z-50 bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-2 animate-slide-up">
-          <span className="text-lg">✓</span>
-          <span className="font-semibold">Transaksi berhasil disimpan!</span>
-        </div>
-      )}
+      <Toast show={success} message="Transaksi berhasil disimpan!" onClose={() => setSuccess(false)} />
+      <Toast show={!!error} message={error} type="error" onClose={() => setError("")} />
 
       {/* Header */}
       <div className="animate-slide-up flex items-center justify-between">
@@ -154,24 +152,45 @@ export default function PenjualanPage() {
             </div>
 
             <div className="space-y-2.5">
-              {items.map((item, idx) => (
+              {items.map((item) => (
                 <div
                   key={item.id}
                   className="grid grid-cols-12 gap-3 items-center bg-slate-50 p-3 rounded-xl border border-slate-100 hover:border-slate-200 transition-colors"
                 >
                   <div className="col-span-5">
-                    <select
-                      value={item.productId}
-                      onChange={(e) => updateItem(item.id, "productId", e.target.value)}
-                      className="form-input text-sm"
-                    >
-                      <option value="">Pilih produk...</option>
-                      {products.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} (Stok: {p.stock})
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={item.label}
+                        onFocus={() => setShowProducts(true)}
+                        onChange={(e) => updateItem(item.id, "label", e.target.value)}
+                        placeholder="Cari produk..."
+                        className="form-input text-sm"
+                      />
+                      {showProducts && products.length > 0 && (
+                        <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                          {loadingProducts ? (
+                            <div className="p-3 text-sm text-slate-400 text-center">Loading...</div>
+                          ) : (
+                            products.filter((p) => p.name.toLowerCase().includes(item.label.toLowerCase())).slice(0, 10).map((p) => (
+                              <button
+                                key={p.id}
+                                type="button"
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex justify-between items-center"
+                                onClick={() => {
+                                  updateItem(item.id, "label", p.name);
+                                  updateItem(item.id, "price", Number(p.price));
+                                  setShowProducts(false);
+                                }}
+                              >
+                                <span>{p.name}</span>
+                                <span className="text-xs text-slate-400 font-mono">{fmt(Number(p.price))}</span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div className="col-span-2">
                     <input
@@ -187,7 +206,7 @@ export default function PenjualanPage() {
                       type="number"
                       min="0"
                       value={item.price}
-                      onChange={(e) => updateItem(item.id, "price", parseInt(e.target.value) || 0)}
+                      onChange={(e) => updateItem(item.id, "price", parseFloat(e.target.value) || 0)}
                       className="form-input text-sm"
                     />
                   </div>

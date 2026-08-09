@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Book, CheckCircle, Search } from "lucide-react";
+import { Plus, Book, CheckCircle, Search, XCircle } from "lucide-react";
+import Toast from "@/components/Toast";
 
 type Account = { id: string; code: string; name: string; type: string };
 
@@ -19,6 +20,7 @@ export default function COAPage() {
   const [formData, setFormData] = useState({ code: "", name: "", type: "ASSET" });
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState("");
   const [search, setSearch] = useState("");
 
   useEffect(() => { fetchAccounts(); }, []);
@@ -26,7 +28,8 @@ export default function COAPage() {
   const fetchAccounts = async () => {
     try {
       const res = await fetch("/api/accounts");
-      setAccounts(await res.json());
+      const data = await res.json();
+      if (res.ok && Array.isArray(data)) setAccounts(data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -47,7 +50,7 @@ export default function COAPage() {
         fetchAccounts();
       } else {
         const err = await res.json();
-        alert(err.error);
+        setError(err.error || "Gagal menyimpan akun");
       }
     } catch (e) { console.error(e); }
     finally { setSaving(false); }
@@ -61,13 +64,8 @@ export default function COAPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      {/* Toast */}
-      {success && (
-        <div className="fixed top-4 right-4 z-50 bg-indigo-600 text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-2 animate-slide-up">
-          <CheckCircle size={18} />
-          <span className="font-semibold">Akun berhasil ditambahkan!</span>
-        </div>
-      )}
+      <Toast show={success} message="Akun berhasil ditambahkan!" onClose={() => setSuccess(false)} />
+      <Toast show={!!error} message={error} type="error" onClose={() => setError("")} />
 
       {/* Header */}
       <div className="animate-slide-up">

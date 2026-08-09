@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { buildJournalPayload, getOrCreateAccount } from "@/lib/accounting";
 import { z } from "zod";
+import { getErrorMessage, getZodIssueMessage } from "@/lib/utils";
 
 const kasbonSchema = z.object({
     type: z.enum(["PIUTANG", "UTANG"]),
@@ -17,9 +18,9 @@ export async function GET() {
         ]);
         
         return NextResponse.json({ piutang, utang });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("API Error [Kasbon GET]:", error);
-        let message = error.message || "Gagal memuat data kasbon.";
+        const message = getErrorMessage(error, "Gagal memuat data kasbon.");
         return NextResponse.json({ error: message }, { status: 500 });
     }
 }
@@ -81,13 +82,12 @@ export async function POST(req: Request) {
         });
 
         return NextResponse.json(result, { status: 201 });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("API Error [Kasbon]:", error);
         if (error instanceof z.ZodError) {
-            const err = error as any;
-            return NextResponse.json({ error: err.issues.length ? err.issues.map((e: any) => e.message).join(", ") : "Validasi input gagal." }, { status: 400 });
+            return NextResponse.json({ error: getZodIssueMessage(error) }, { status: 400 });
         }
-        let message = error.message || "Gagal memproses kasbon.";
+        const message = getErrorMessage(error, "Gagal memproses kasbon.");
         return NextResponse.json({ error: message }, { status: 500 });
     }
 }

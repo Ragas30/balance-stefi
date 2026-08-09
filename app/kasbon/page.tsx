@@ -12,7 +12,9 @@ import {
   Loader2,
   Banknote,
   AlertTriangle,
+  Wallet,
 } from "lucide-react";
+import Toast from "@/components/Toast";
 
 type Kasbon = {
   id: string;
@@ -22,6 +24,7 @@ type Kasbon = {
   paid: number;
   status: "LUNAS" | "BELUM_LUNAS";
 };
+type KasbonApiResponse = { piutang: Kasbon[]; utang: Kasbon[] };
 
 export default function KasbonPage() {
   const [activeTab, setActiveTab] = useState<"PIUTANG" | "UTANG">("PIUTANG");
@@ -31,17 +34,21 @@ export default function KasbonPage() {
   const [formName, setFormName] = useState("");
   const [formTotal, setFormTotal] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [success, setSuccess] = useState(false);
+  const [payModal, setPayModal] = useState<{ type: "PIUTANG" | "UTANG"; id: string; name: string; sisa: number } | null>(null);
+  const [payAmount, setPayAmount] = useState("");
+  const [paying, setPaying] = useState(false);
 
   useEffect(() => { fetchKasbon(); }, []);
 
   const fetchKasbon = async () => {
     try {
       const res = await fetch("/api/kasbon");
-      const data = await res.json();
+      const data: KasbonApiResponse = await res.json();
       if (res.ok) {
-        setPiutangData(data.piutang.map((i: any) => ({ ...i, name: i.customer })));
+        setPiutangData(data.piutang.map((i) => ({ ...i, name: i.customer })));
         setUtangData(data.utang);
       }
     } catch (e) { console.error(e); }
@@ -52,7 +59,7 @@ export default function KasbonPage() {
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
-    const total = parseInt(formTotal);
+    const total = parseFloat(formTotal);
     if (!total || total <= 0 || !formName) return;
 
     setLoading(true);
@@ -71,10 +78,33 @@ export default function KasbonPage() {
       setFormTotal("");
       setIsGenerating(false);
       fetchKasbon();
-    } catch (error: any) {
-      alert(error.message || "Gagal mencatat kasbon");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Gagal mencatat kasbon");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePay = async () => {
+    if (!payModal || !payAmount || Number(payAmount) <= 0) return;
+    setPaying(true);
+    try {
+      const res = await fetch("/api/kasbon/pay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: payModal.type, id: payModal.id, amount: Number(payAmount) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+      setPayModal(null);
+      setPayAmount("");
+      fetchKasbon();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Gagal memproses pembayaran");
+    } finally {
+      setPaying(false);
     }
   };
 
@@ -87,13 +117,8 @@ export default function KasbonPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      {/* Toast */}
-      {success && (
-        <div className="fixed top-4 right-4 z-50 bg-indigo-600 text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-2 animate-slide-up">
-          <CheckCircle2 size={18} />
-          <span className="font-semibold">Kasbon berhasil dicatat!</span>
-        </div>
-      )}
+      <Toast show={success} message="Kasbon berhasil dicatat!" onClose={() => setSuccess(false)} />
+      <Toast show={!!error} message={error} type="error" onClose={() => setError("")} />
 
       {/* Header */}
       <div className="animate-slide-up flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -261,6 +286,58 @@ export default function KasbonPage() {
         </div>
       </div>
 
+      {/* Pay Modal */}
+      {payModal && (
+        <div className="modal-overlay">
+          <div className="modal-box">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Wallet size={20} className="text-emerald-500" />
+                Bayar {payModal.type === "PIUTANG" ? "Piutang" : "Utang"}
+              </h2>
+              <button onClick={() => setPayModal(null)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+                <XCircle size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-slate-50 rounded-xl p-4 text-sm">
+                <p className="text-slate-500">{payModal.type === "PIUTANG" ? "Pelanggan" : "Supplier"}</p>
+                <p className="font-bold text-slate-800">{payModal.name}</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-4 text-sm">
+                <p className="text-slate-500">Sisa Tagihan</p>
+                <p className="font-bold text-slate-800">{fmt(payModal.sisa)}</p>
+              </div>
+              <div>
+                <label className="form-label">Jumlah Bayar (Rp)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max={payModal.sisa}
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  placeholder={`Maksimal ${fmt(payModal.sisa)}`}
+                  className="form-input text-lg"
+                  required
+                />
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => setPayModal(null)} className="btn btn-ghost flex-1 justify-center">Batal</button>
+                <button
+                  onClick={handlePay}
+                  disabled={!payAmount || Number(payAmount) <= 0 || Number(payAmount) > payModal.sisa || paying}
+                  className="btn btn-emerald flex-1 justify-center"
+                >
+                  {paying ? <Loader2 className="animate-spin" size={17} /> : <Banknote size={17} />}
+                  {paying ? "Memproses..." : "Bayar Sekarang"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="card overflow-hidden animate-slide-up-3">
         <div className="section-header">
@@ -288,6 +365,7 @@ export default function KasbonPage() {
                 <th className="text-right">Sudah Dibayar</th>
                 <th className="text-right">Sisa</th>
                 <th className="text-center">Status</th>
+                <th className="text-center w-24">Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -314,12 +392,22 @@ export default function KasbonPage() {
                         </span>
                       )}
                     </td>
+                    <td className="text-center">
+                      {item.status !== "LUNAS" && (
+                        <button
+                          onClick={() => setPayModal({ type: activeTab, id: item.id, name: item.name || "", sisa: Number(item.total) - Number(item.paid) })}
+                          className="btn btn-ghost text-xs py-1.5 px-3"
+                        >
+                          <Banknote size={13} /> Bayar
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
               {currentData.length === 0 && (
                 <tr>
-                  <td colSpan={5}>
+                  <td colSpan={6}>
                     <div className="empty-state">
                       <UserRound size={36} />
                       <p>{search ? "Data tidak ditemukan" : "Belum ada data kasbon"}</p>

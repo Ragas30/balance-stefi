@@ -5,25 +5,27 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  ArrowLeftRight,
   ShoppingCart,
   Ticket,
   Users,
-  Book,
   Menu,
   X,
   TrendingUp,
   Sparkles,
   ChevronRight,
+  Book,
+  ArrowLeftRight,
+  FileText,
 } from "lucide-react";
 
 const menus = [
   { href: "/dashboard",      label: "Dashboard",         icon: LayoutDashboard, color: "text-violet-400", bg: "bg-violet-500/10" },
-  { href: "/dashboard/coa",  label: "Buku Besar / COA",  icon: Book,            color: "text-sky-400",    bg: "bg-sky-500/10"    },
-  { href: "/transaksi",      label: "Jurnal Transaksi",  icon: ArrowLeftRight,  color: "text-indigo-400", bg: "bg-indigo-500/10" },
   { href: "/penjualan",      label: "Penjualan",         icon: ShoppingCart,    color: "text-emerald-400",bg: "bg-emerald-500/10"},
+  { href: "/transaksi",      label: "Transaksi",         icon: ArrowLeftRight,  color: "text-indigo-400", bg: "bg-indigo-500/10"  },
+  { href: "/laporan",        label: "Laporan",           icon: FileText,        color: "text-sky-400",    bg: "bg-sky-500/10"    },
   { href: "/voucher",        label: "Voucher",           icon: Ticket,          color: "text-rose-400",   bg: "bg-rose-500/10"   },
   { href: "/kasbon",         label: "Kasbon",            icon: Users,           color: "text-amber-400",  bg: "bg-amber-500/10"  },
+  { href: "/dashboard/coa",  label: "COA (Akun)",        icon: Book,            color: "text-teal-400",   bg: "bg-teal-500/10"   },
 ];
 
 type MenuType = typeof menus[0];
@@ -88,7 +90,7 @@ function SidebarContent({
 
       {/* Nav */}
       <nav className="space-y-0.5 flex-1">
-        <p className="text-[10px] uppercase tracking-widest text-slate-600 px-3 mb-3 font-semibold">Menu Utama</p>
+        <p className="text-[10px] uppercase tracking-widest text-slate-600 px-3 mb-3 font-semibold">Menu Navigasi</p>
         {menus.map((menu) => (
           <NavItem
             key={menu.href}
@@ -106,7 +108,7 @@ function SidebarContent({
           <span className="text-xs font-semibold text-violet-300">Tip Akuntansi</span>
         </div>
         <p className="text-xs text-slate-400 leading-relaxed">
-          Pastikan setiap transaksi selalu mencatat jurnal agar laporan laba rugi akurat.
+          Catat pemasukan dan pengeluaran secara rutin agar analisa laba rugi tetap akurat.
         </p>
       </div>
 
@@ -122,8 +124,9 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   const isActive = (href: string) => {
-    if (href === "/dashboard") return pathname === "/dashboard" || pathname.startsWith("/dashboard");
-    return pathname.startsWith(href);
+    if (href === "/dashboard") return pathname === "/dashboard";
+    if (href === "/dashboard/coa") return pathname === "/dashboard/coa";
+    return pathname === href || pathname.startsWith(href + "/");
   };
 
   return (

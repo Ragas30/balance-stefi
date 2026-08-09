@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { isJournalBalanced, buildJournalPayload } from "@/lib/accounting";
+import { buildJournalPayload } from "@/lib/accounting";
 import { z } from "zod";
+import { getErrorMessage, getZodIssueMessage } from "@/lib/utils";
 
 const journalDetailSchema = z.object({
   accountId: z.string().uuid("Invalid Account ID"),
@@ -21,7 +22,7 @@ export async function GET(req: Request) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
-    const dateFilter: any = {};
+    const dateFilter: { gte?: Date; lte?: Date } = {};
     if (startDate) dateFilter.gte = new Date(startDate);
     if (endDate) dateFilter.lte = new Date(endDate);
 
@@ -36,9 +37,9 @@ export async function GET(req: Request) {
     });
 
     return NextResponse.json(transactions);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("API Error [Journal GET]:", error);
-    let message = error.message || "Gagal mengambil data jurnal.";
+    const message = getErrorMessage(error, "Gagal mengambil data jurnal.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -52,15 +53,15 @@ export async function POST(req: Request) {
     const date = new Date(parsedData.date);
 
     // Gunakan fungsi lib/accounting.ts untuk memvalidasi dan membuild payload prisma
-    let payload;
+    let payload: ReturnType<typeof buildJournalPayload>;
     try {
         payload = buildJournalPayload({
             date,
             description: parsedData.description,
             details: parsedData.details
         });
-    } catch (accError: any) {
-        return NextResponse.json({ error: accError.message }, { status: 400 });
+    } catch (accError: unknown) {
+        return NextResponse.json({ error: getErrorMessage(accError, "Validasi jurnal gagal.") }, { status: 400 });
     }
 
     // Insert menggunakan transaksi (meskipun Prisma sudah menanganinya dengan nested create, kita eksplisit untuk kejelasan)
@@ -76,13 +77,12 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json(transaction, { status: 201 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("API Error [Journal]:", error);
     if (error instanceof z.ZodError) {
-      const err = error as any;
-      return NextResponse.json({ error: err.errors ? err.errors.map((e: any) => e.message).join(", ") : "Validasi input gagal." }, { status: 400 });
+      return NextResponse.json({ error: getZodIssueMessage(error) }, { status: 400 });
     }
-    let message = error.message || "Gagal menyimpan jurnal.";
+    const message = getErrorMessage(error, "Gagal menyimpan jurnal.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

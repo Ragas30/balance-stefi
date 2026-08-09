@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { getErrorMessage } from "@/lib/utils";
 
 type ReportMode = "summary" | "detailed";
 type ExportFormat = "excel" | "pdf";
@@ -133,7 +134,7 @@ export async function GET(req: Request) {
     let expense = 0;
 
     const rows: ReportRow[] = details
-      .map((d) => {
+      .map((d): ReportRow => {
         const debit = Number(d.debit);
         const credit = Number(d.credit);
         const amount = d.account.type === "REVENUE" ? credit - debit : debit - credit;
@@ -157,7 +158,8 @@ export async function GET(req: Request) {
     const title = getReportTitle(startDate, endDate);
 
     if (format === "excel") {
-      const csv = toCsv(rows, title, summary);
+      const bom = "\uFEFF";
+      const csv = bom + toCsv(rows, title, summary);
       return new NextResponse(csv, {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
@@ -188,8 +190,8 @@ export async function GET(req: Request) {
         "Content-Disposition": `attachment; filename=laporan-laba-rugi-${Date.now()}.pdf`,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("API Error [Export Laba Rugi GET]:", error);
-    return NextResponse.json({ error: error?.message || "Gagal export laporan." }, { status: 500 });
+    return NextResponse.json({ error: getErrorMessage(error, "Gagal export laporan.") }, { status: 500 });
   }
 }

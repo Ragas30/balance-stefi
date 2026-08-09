@@ -1,0 +1,44 @@
+
+> keuangan@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.4 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://100.71.116.127:3000
+- Environments: .env
+✓ Ready in 961ms
+
+ GET /penjualan 200 in 1145ms (next.js: 749ms, application-code: 396ms)
+ GET /dashboard 200 in 145ms (next.js: 55ms, application-code: 90ms)
+ GET /api/accounts 200 in 662ms (next.js: 397ms, application-code: 265ms)
+ GET /api/journal 200 in 72ms (next.js: 38ms, application-code: 35ms)
+ GET /api/kasbon 200 in 95ms (next.js: 37ms, application-code: 58ms)
+ GET /api/kasbon/pay 405 in 307ms (next.js: 298ms, application-code: 9ms)
+ GET /api/products 200 in 71ms (next.js: 50ms, application-code: 20ms)
+ GET /api/report/laba-rugi 200 in 84ms (next.js: 51ms, application-code: 33ms)
+ GET /api/report/laba-rugi/export 200 in 69ms (next.js: 49ms, application-code: 19ms)
+ GET /api/report/simple 200 in 75ms (next.js: 45ms, application-code: 30ms)
+ GET /api/report/simple/export 200 in 59ms (next.js: 42ms, application-code: 17ms)
+ GET /api/voucher 200 in 55ms (next.js: 39ms, application-code: 16ms)
+ GET /api/transactions 200 in 50ms (next.js: 38ms, application-code: 12ms)
+ GET /api/sales 405 in 530ms (next.js: 518ms, application-code: 12ms)
+ GET /penjualan 200 in 226ms (next.js: 53ms, application-code: 173ms)
+ GET /penjualan 200 in 133ms (next.js: 8ms, application-code: 125ms)
+ GET /penjualan 200 in 91ms (next.js: 10ms, application-code: 81ms)
+ GET /penjualan 200 in 92ms (next.js: 47ms, application-code: 45ms)
+ GET /api/report/simple 200 in 65ms (next.js: 48ms, application-code: 17ms)
+ GET /api/report/laba-rugi 200 in 33ms (next.js: 22ms, application-code: 11ms)
+ GET /api/journal 200 in 55ms (next.js: 43ms, application-code: 12ms)
+ GET /api/transactions 200 in 31ms (next.js: 17ms, application-code: 14ms)
+ GET /api/kasbon 200 in 27ms (next.js: 18ms, application-code: 8ms)
+ GET /api/voucher 200 in 32ms (next.js: 20ms, application-code: 12ms)
+ GET /api/accounts 200 in 27ms (next.js: 18ms, application-code: 9ms)
+ GET /api/products 200 in 34ms (next.js: 22ms, application-code: 12ms)
+ GET /dashboard 200 in 214ms (next.js: 19ms, application-code: 195ms)
+ GET /penjualan 200 in 83ms (next.js: 10ms, application-code: 73ms)
+ GET /transaksi 200 in 118ms (next.js: 45ms, application-code: 73ms)
+ GET /laporan 200 in 119ms (next.js: 43ms, application-code: 77ms)
+ GET /voucher 200 in 126ms (next.js: 47ms, application-code: 79ms)
+ GET /kasbon 200 in 116ms (next.js: 41ms, application-code: 75ms)
+ GET /dashboard/coa 200 in 127ms (next.js: 42ms, application-code: 85ms)
+ GET /penjualan 200 in 137ms (next.js: 13ms, application-code: 124ms)

@@ -1,6 +1,3 @@
-import { Prisma } from "@prisma/client";
-type Decimal = Prisma.Decimal;
-
 /**
  * Calculates Income Statement (Laba Rugi) parameters from given transaction details.
  * Rule:
@@ -8,22 +5,22 @@ type Decimal = Prisma.Decimal;
  * - Expense: SUM(debit - credit) for AccountType = EXPENSE
  * - Laba = Revenue - Expense
  */
-export function calculateLabaRugi(details: { account: { type: string }, debit: Decimal, credit: Decimal }[]) {
-    let revenue = new Prisma.Decimal(0);
-    let expense = new Prisma.Decimal(0);
+export function calculateLabaRugi(details: { account: { type: string }, debit: number, credit: number }[]) {
+    let revenue = 0;
+    let expense = 0;
 
     for (const d of details) {
         if (d.account.type === "REVENUE") {
-            revenue = revenue.add(d.credit).sub(d.debit);
+            revenue += Number(d.credit) - Number(d.debit);
         } else if (d.account.type === "EXPENSE") {
-            expense = expense.add(d.debit).sub(d.credit);
+            expense += Number(d.debit) - Number(d.credit);
         }
     }
 
     return {
-        revenue: parseFloat(revenue.toString()),
-        expense: parseFloat(expense.toString()),
-        laba: parseFloat(revenue.sub(expense).toString())
+        revenue: Math.round(revenue * 100) / 100,
+        expense: Math.round(expense * 100) / 100,
+        laba: Math.round((revenue - expense) * 100) / 100
     };
 }
 

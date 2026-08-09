@@ -1,105 +1,113 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
-  Calendar,
-  Search,
-  BarChart3,
-  RefreshCw,
-  ArrowUpRight,
   ArrowDownRight,
+  ArrowUpRight,
+  BarChart3,
+  Calendar,
   Download,
+  DollarSign,
+  RefreshCw,
+  Search,
+  TrendingDown,
+  TrendingUp,
 } from "lucide-react";
 
+type ReportMode = "summary" | "detailed";
+
 type BreakdownItem = {
-  id: string;
-  code: string;
-  name: string;
-  type: "REVENUE" | "EXPENSE";
+  category: string;
+  type: "INCOME" | "EXPENSE";
   total: number;
+};
+
+type LineItem = {
+  id: string;
+  date: string;
+  description: string;
+  category: string;
+  type: "INCOME" | "EXPENSE";
+  amount: number;
+  source: "MANUAL" | "IMPORT" | "KASBON";
+  kasbonType: string | null;
+  kasbonRef: string | null;
+};
+
+type ReportResponse = {
+  summary: { income: number; expense: number; laba: number };
+  breakdown: BreakdownItem[];
+  mode: ReportMode;
+  lines: LineItem[];
 };
 
 export default function DashboardPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [mode, setMode] = useState<"summary" | "detailed">("summary");
+  const [mode, setMode] = useState<ReportMode>("summary");
   const [loading, setLoading] = useState(true);
-  const [report, setReport] = useState<{
-    summary: { revenue: number; expense: number; laba: number };
-    breakdown: BreakdownItem[];
-    mode: "summary" | "detailed";
-    lines: Array<{
-      date: string;
-      description: string;
-      accountCode: string;
-      accountName: string;
-      type: "REVENUE" | "EXPENSE";
-      debit: number;
-      credit: number;
-      amount: number;
-    }>;
-  }>({ summary: { revenue: 0, expense: 0, laba: 0 }, breakdown: [], mode: "summary", lines: [] });
+  const [report, setReport] = useState<ReportResponse>({
+    summary: { income: 0, expense: 0, laba: 0 },
+    breakdown: [],
+    mode: "summary",
+    lines: [],
+  });
 
-  useEffect(() => {
-    fetchReport();
-  }, []);
+  const fmt = (value: number) =>
+    new Intl.NumberFormat("id-ID", {
+      style: "currency",
+      currency: "IDR",
+      maximumFractionDigits: 0,
+    }).format(value);
 
   const fetchReport = async () => {
     setLoading(true);
     try {
-      let url = "/api/report/laba-rugi";
       const params = new URLSearchParams();
       if (startDate) params.append("startDate", startDate);
       if (endDate) params.append("endDate", endDate);
       params.append("mode", mode);
-      if (params.toString()) url += `?${params.toString()}`;
 
-      const res = await fetch(url);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const res = await fetch(`/api/report/simple?${params.toString()}`);
+      const data = (await res.json()) as ReportResponse | { error: string };
+      if (!res.ok || "error" in data) throw new Error("error" in data ? data.error : "Gagal memuat laporan");
       setReport(data);
-    } catch (e) {
-      console.error(e);
+    } catch (error) {
+      console.error(error);
     } finally {
       setLoading(false);
     }
   };
 
-  const exportReport = async (format: "excel" | "pdf") => {
+  useEffect(() => {
+    fetchReport();
+  }, []);
+
+  const exportReport = (format: "excel" | "pdf") => {
     const params = new URLSearchParams();
     if (startDate) params.append("startDate", startDate);
     if (endDate) params.append("endDate", endDate);
     params.append("mode", mode);
     params.append("format", format);
-
-    const url = `/api/report/laba-rugi/export?${params.toString()}`;
-    window.open(url, "_blank");
+    window.open(`/api/report/simple/export?${params.toString()}`, "_blank");
   };
 
-  const fmt = (val: number) =>
-    new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(val);
-
-  const revenues = report.breakdown.filter((i) => i.type === "REVENUE");
-  const expenses = report.breakdown.filter((i) => i.type === "EXPENSE");
+  const incomeBreakdown = report.breakdown.filter((item) => item.type === "INCOME");
+  const expenseBreakdown = report.breakdown.filter((item) => item.type === "EXPENSE");
   const isProfit = report.summary.laba >= 0;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      {/* Header */}
       <div className="animate-slide-up flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="page-title flex items-center gap-2.5">
             <BarChart3 className="text-violet-600" size={28} />
             Dashboard Keuangan
           </h1>
-          <p className="page-subtitle">Ringkasan laporan laba rugi minimarket STEFI</p>
+          <p className="page-subtitle">Ringkasan pemasukan, pengeluaran, dan laba/rugi</p>
         </div>
       </div>
 
-      {/* Filter */}
       <div className="card p-5 animate-slide-up-2">
         <div className="flex flex-wrap gap-4 items-end">
           <div>
@@ -107,54 +115,33 @@ export default function DashboardPage() {
               <Calendar size={13} className="text-violet-500" />
               Dari Tanggal
             </label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="form-input w-44"
-            />
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="form-input w-44" />
           </div>
           <div>
             <label className="form-label flex items-center gap-1.5">
               <Calendar size={13} className="text-violet-500" />
               Sampai Tanggal
             </label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="form-input w-44"
-            />
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="form-input w-44" />
           </div>
           <button onClick={fetchReport} className="btn btn-primary">
-            <Search size={16} />
-            Terapkan Filter
+            <Search size={16} /> Terapkan Filter
           </button>
           <div>
             <label className="form-label">Mode Laporan</label>
-            <select
-              value={mode}
-              onChange={(e) => setMode(e.target.value as "summary" | "detailed")}
-              className="form-input w-40"
-            >
+            <select value={mode} onChange={(e) => setMode(e.target.value as ReportMode)} className="form-input w-44">
               <option value="summary">Ringkas</option>
               <option value="detailed">Detail + Keterangan</option>
             </select>
           </div>
-          <button
-            onClick={() => { setStartDate(""); setEndDate(""); }}
-            className="btn btn-ghost"
-          >
-            <RefreshCw size={16} />
-            Reset
+          <button onClick={() => { setStartDate(""); setEndDate(""); }} className="btn btn-ghost">
+            <RefreshCw size={16} /> Reset
           </button>
           <button onClick={() => exportReport("excel")} className="btn btn-ghost">
-            <Download size={16} />
-            Export Excel
+            <Download size={16} /> Export Excel
           </button>
           <button onClick={() => exportReport("pdf")} className="btn btn-ghost">
-            <Download size={16} />
-            Export PDF
+            <Download size={16} /> Export PDF
           </button>
         </div>
       </div>
@@ -166,223 +153,100 @@ export default function DashboardPage() {
         </div>
       ) : (
         <>
-          {/* Summary Cards */}
           <div className="grid sm:grid-cols-3 gap-5 animate-slide-up-3">
-            {/* Revenue */}
-            <div className="stat-emerald rounded-2xl p-6 text-white hover:-translate-y-1 transition-transform duration-200">
+            <div className="stat-emerald rounded-2xl p-6 text-white">
               <div className="flex justify-between items-start">
                 <div>
-                  <p className="text-emerald-100 text-sm font-medium">Total Pendapatan</p>
-                  <h3 className="text-2xl font-bold mt-1.5 tracking-tight">
-                    {fmt(report.summary.revenue)}
-                  </h3>
-                  <div className="flex items-center gap-1 mt-2 text-emerald-100 text-xs">
-                    <ArrowUpRight size={14} />
-                    <span>Semua akun pendapatan</span>
-                  </div>
+                  <p className="text-emerald-100 text-sm font-medium">Total Pemasukan</p>
+                  <h3 className="text-2xl font-bold mt-1.5 tracking-tight">{fmt(report.summary.income)}</h3>
+                  <div className="flex items-center gap-1 mt-2 text-emerald-100 text-xs"><ArrowUpRight size={14} /><span>Semua transaksi masuk</span></div>
                 </div>
-                <div className="bg-white/20 p-2.5 rounded-xl">
-                  <TrendingUp size={22} />
-                </div>
+                <div className="bg-white/20 p-2.5 rounded-xl"><TrendingUp size={22} /></div>
               </div>
             </div>
 
-            {/* Expense */}
-            <div className="stat-rose rounded-2xl p-6 text-white hover:-translate-y-1 transition-transform duration-200">
+            <div className="stat-rose rounded-2xl p-6 text-white">
               <div className="flex justify-between items-start">
                 <div>
-                  <p className="text-rose-100 text-sm font-medium">Total Beban</p>
-                  <h3 className="text-2xl font-bold mt-1.5 tracking-tight">
-                    {fmt(report.summary.expense)}
-                  </h3>
-                  <div className="flex items-center gap-1 mt-2 text-rose-100 text-xs">
-                    <ArrowDownRight size={14} />
-                    <span>Semua akun beban</span>
-                  </div>
+                  <p className="text-rose-100 text-sm font-medium">Total Pengeluaran</p>
+                  <h3 className="text-2xl font-bold mt-1.5 tracking-tight">{fmt(report.summary.expense)}</h3>
+                  <div className="flex items-center gap-1 mt-2 text-rose-100 text-xs"><ArrowDownRight size={14} /><span>Semua transaksi keluar</span></div>
                 </div>
-                <div className="bg-white/20 p-2.5 rounded-xl">
-                  <TrendingDown size={22} />
-                </div>
+                <div className="bg-white/20 p-2.5 rounded-xl"><TrendingDown size={22} /></div>
               </div>
             </div>
 
-            {/* Laba/Rugi */}
-            <div
-              className={`rounded-2xl p-6 text-white hover:-translate-y-1 transition-transform duration-200 ${
-                isProfit ? "stat-violet" : "stat-amber"
-              }`}
-            >
+            <div className={`rounded-2xl p-6 text-white ${isProfit ? "stat-violet" : "stat-amber"}`}>
               <div className="flex justify-between items-start">
                 <div>
-                  <p className="text-white/80 text-sm font-medium">
-                    {isProfit ? "Laba Bersih" : "Rugi Bersih"}
-                  </p>
-                  <h3 className="text-2xl font-bold mt-1.5 tracking-tight">
-                    {fmt(report.summary.laba)}
-                  </h3>
-                  <div className="flex items-center gap-1 mt-2 text-white/70 text-xs">
-                    {isProfit ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                    <span>{isProfit ? "Pendapatan > Beban" : "Beban > Pendapatan"}</span>
-                  </div>
+                  <p className="text-white/80 text-sm font-medium">{isProfit ? "Laba Bersih" : "Rugi Bersih"}</p>
+                  <h3 className="text-2xl font-bold mt-1.5 tracking-tight">{fmt(report.summary.laba)}</h3>
                 </div>
-                <div className="bg-white/20 p-2.5 rounded-xl">
-                  <DollarSign size={22} />
-                </div>
+                <div className="bg-white/20 p-2.5 rounded-xl"><DollarSign size={22} /></div>
               </div>
             </div>
           </div>
 
-          {/* Margin Bar */}
-          {report.summary.revenue > 0 && (
-            <div className="card p-5 animate-slide-up-4">
-              <div className="flex justify-between items-center mb-3">
-                <span className="text-sm font-semibold text-slate-700">Margin Laba</span>
-                <span
-                  className={`text-sm font-bold ${isProfit ? "text-emerald-600" : "text-rose-600"}`}
-                >
-                  {((report.summary.laba / report.summary.revenue) * 100).toFixed(1)}%
-                </span>
-              </div>
-              <div className="progress-bar">
-                <div
-                  className={`progress-fill ${isProfit ? "bg-gradient-to-r from-emerald-400 to-emerald-600" : "bg-gradient-to-r from-rose-400 to-rose-600"}`}
-                  style={{
-                    width: `${Math.min(Math.abs((report.summary.laba / report.summary.revenue) * 100), 100)}%`,
-                  }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Breakdown Tables */}
           <div className="grid md:grid-cols-2 gap-5 animate-slide-up-4">
-            {/* Pendapatan */}
             <div className="card overflow-hidden">
-              <div className="section-header bg-emerald-50/60">
-                <h3 className="flex items-center gap-2 text-emerald-800">
-                  <TrendingUp size={16} className="text-emerald-500" />
-                  Rincian Pendapatan
-                </h3>
-                <span className="badge badge-emerald">{revenues.length} akun</span>
-              </div>
-              {revenues.length > 0 ? (
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Akun</th>
-                      <th className="text-right">Jumlah</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {revenues.map((r) => (
-                      <tr key={r.id}>
-                        <td>
-                          <span className="badge badge-emerald mr-2">{r.code}</span>
-                          {r.name}
-                        </td>
-                        <td className="text-right font-semibold text-emerald-600">{fmt(r.total)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <td className="font-bold text-slate-700 border-t border-slate-200 pt-3">Total</td>
-                      <td className="text-right font-bold text-emerald-700 border-t border-slate-200 pt-3">
-                        {fmt(report.summary.revenue)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              ) : (
-                <div className="empty-state">
-                  <TrendingUp size={36} />
-                  <p>Belum ada data pendapatan</p>
-                </div>
-              )}
+              <div className="section-header bg-emerald-50/60"><h3 className="text-emerald-800">Rincian Pemasukan per Kategori</h3></div>
+              <table className="data-table">
+                <thead><tr><th>Kategori</th><th className="text-right">Jumlah</th></tr></thead>
+                <tbody>
+                  {incomeBreakdown.length === 0 ? (
+                    <tr><td colSpan={2} className="text-center text-slate-400 py-8">Belum ada pemasukan</td></tr>
+                  ) : (
+                    incomeBreakdown.map((item) => (
+                      <tr key={`i-${item.category}`}><td>{item.category}</td><td className="text-right font-semibold text-emerald-600">{fmt(item.total)}</td></tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
 
-            {/* Beban */}
             <div className="card overflow-hidden">
-              <div className="section-header bg-rose-50/60">
-                <h3 className="flex items-center gap-2 text-rose-800">
-                  <TrendingDown size={16} className="text-rose-500" />
-                  Rincian Beban
-                </h3>
-                <span className="badge badge-rose">{expenses.length} akun</span>
-              </div>
-              {expenses.length > 0 ? (
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Akun</th>
-                      <th className="text-right">Jumlah</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {expenses.map((e) => (
-                      <tr key={e.id}>
-                        <td>
-                          <span className="badge badge-rose mr-2">{e.code}</span>
-                          {e.name}
-                        </td>
-                        <td className="text-right font-semibold text-rose-600">{fmt(e.total)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <td className="font-bold text-slate-700 border-t border-slate-200 pt-3">Total</td>
-                      <td className="text-right font-bold text-rose-700 border-t border-slate-200 pt-3">
-                        {fmt(report.summary.expense)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              ) : (
-                <div className="empty-state">
-                  <TrendingDown size={36} />
-                  <p>Belum ada data beban</p>
-                </div>
-              )}
+              <div className="section-header bg-rose-50/60"><h3 className="text-rose-800">Rincian Pengeluaran per Kategori</h3></div>
+              <table className="data-table">
+                <thead><tr><th>Kategori</th><th className="text-right">Jumlah</th></tr></thead>
+                <tbody>
+                  {expenseBreakdown.length === 0 ? (
+                    <tr><td colSpan={2} className="text-center text-slate-400 py-8">Belum ada pengeluaran</td></tr>
+                  ) : (
+                    expenseBreakdown.map((item) => (
+                      <tr key={`e-${item.category}`}><td>{item.category}</td><td className="text-right font-semibold text-rose-600">{fmt(item.total)}</td></tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 
           {mode === "detailed" && (
             <div className="card overflow-hidden animate-slide-up-4">
               <div className="section-header bg-slate-50">
-                <h3>Detail Transaksi Laba/Rugi (dengan keterangan)</h3>
+                <h3>Detail Transaksi (dengan keterangan)</h3>
                 <span className="badge badge-slate">{report.lines.length} baris</span>
               </div>
-              {report.lines.length > 0 ? (
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Tanggal</th>
-                      <th>Keterangan</th>
-                      <th>Akun</th>
-                      <th>Tipe</th>
-                      <th className="text-right">Nilai</th>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Tanggal</th><th>Keterangan</th><th>Kategori</th><th>Tipe</th><th>Sumber</th><th>Kasbon Ref</th><th className="text-right">Nilai</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.lines.map((line) => (
+                    <tr key={line.id}>
+                      <td>{line.date.slice(0, 10)}</td>
+                      <td>{line.description}</td>
+                      <td>{line.category}</td>
+                      <td>{line.type === "INCOME" ? "Pemasukan" : "Pengeluaran"}</td>
+                      <td>{line.source}</td>
+                      <td>{line.kasbonRef ?? "-"}</td>
+                      <td className={`text-right font-semibold ${line.type === "INCOME" ? "text-emerald-600" : "text-rose-600"}`}>{fmt(line.amount)}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {report.lines.map((line, i) => (
-                      <tr key={`${line.date}-${line.accountCode}-${i}`}>
-                        <td>{line.date.slice(0, 10)}</td>
-                        <td>{line.description}</td>
-                        <td>{line.accountCode} - {line.accountName}</td>
-                        <td>{line.type === "REVENUE" ? "Pendapatan" : "Beban"}</td>
-                        <td className={`text-right font-semibold ${line.type === "REVENUE" ? "text-emerald-600" : "text-rose-600"}`}>
-                          {fmt(line.amount)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div className="empty-state">
-                  <p>Tidak ada detail transaksi pada periode ini.</p>
-                </div>
-              )}
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </>

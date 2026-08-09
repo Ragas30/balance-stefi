@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { buildJournalPayload, getOrCreateAccount } from "@/lib/accounting";
 import { z } from "zod";
+import { getErrorMessage, getZodIssueMessage } from "@/lib/utils";
 
 const saleDetailSchema = z.object({
-    productId: z.string().uuid("Invalid Product ID"),
+    label: z.string().min(1, "Label produk wajib diisi"),
     qty: z.number().int().min(1, "Qty minimal 1"),
     price: z.number().min(0, "Harga tidak valid")
 });
@@ -27,21 +28,7 @@ export async function POST(req: Request) {
 
         // Execute in a giant transaction
         const result = await prisma.$transaction(async (tx) => {
-            // 1. Process Product Stocks
-            for (const item of data.details) {
-                const product = await tx.product.findUnique({ where: { id: item.productId } });
-                if (!product) throw new Error(`Product ${item.productId} tidak ditemukan`);
-                if (product.stock < item.qty) {
-                    throw new Error(`Stok ${product.name} tidak mencukupi. Tersedia: ${product.stock}`);
-                }
-                
-                await tx.product.update({
-                    where: { id: item.productId },
-                    data: { stock: { decrement: item.qty } }
-                });
-            }
-
-            // 2. Process Payment Methods (Voucher / Kasbon constraints)
+            // 1. Process Payment Methods (Voucher / Kasbon constraints)
             if (data.paymentMethod === "VOUCHER") {
                 if (!data.voucherCode) throw new Error("Kode Voucher wajib diisi.");
                 const voucher = await tx.voucher.findUnique({ where: { code: data.voucherCode } });
@@ -73,14 +60,15 @@ export async function POST(req: Request) {
                 });
             }
 
-            // 3. Create Sale record
+            // 2. Create Sale record
             const sale = await tx.sale.create({
                 data: {
                     date,
                     total: totalAmount,
                     details: {
                         create: data.details.map(d => ({
-                            productId: d.productId,
+                            // Menyimpan label produk bebas ke kolom productId existing
+                            productId: d.label,
                             qty: d.qty,
                             price: d.price
                         }))
@@ -88,7 +76,7 @@ export async function POST(req: Request) {
                 }
             });
 
-            // 4. Generate Journal Double-Entry
+            // 3. Generate Journal Double-Entry
             const pendapatanAccountId = await getOrCreateAccount(tx, "4110", "Pendapatan Penjualan", "REVENUE");
             
             let debitAccountId = "";
@@ -123,14 +111,12 @@ export async function POST(req: Request) {
 
         return NextResponse.json(result, { status: 201 });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("API Error [Sales]:", error);
         if (error instanceof z.ZodError) {
-            const err = error as any;
-            return NextResponse.json({ error: err.errors ? err.errors.map((e: any) => e.message).join(", ") : "Validasi input gagal." }, { status: 400 });
+            return NextResponse.json({ error: getZodIssueMessage(error) }, { status: 400 });
         }
-        let message = error.message || "Gagal memproses penjualan.";
-        if (error.message?.includes("Record to update not found")) message = "Produk tidak ditemukan di database.";
+        const message = getErrorMessage(error, "Gagal memproses penjualan.");
         return NextResponse.json({ error: message }, { status: 500 });
     }
 }

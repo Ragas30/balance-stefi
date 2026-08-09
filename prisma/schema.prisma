@@ -18,7 +18,7 @@ model Account {
 }
 
 enum AccountType {
-  ASSET3
+  ASSET
   LIABILITY
   EQUITY
   REVENUE
@@ -40,8 +40,8 @@ model TransactionDetail {
   transactionId String
   accountId     String
 
-  debit         Decimal  @default(0)
-  credit        Decimal  @default(0)
+  debit         Float  @default(0)
+  credit        Float  @default(0)
 
   transaction   Transaction @relation(fields: [transactionId], references: [id])
   account       Account     @relation(fields: [accountId], references: [id])
@@ -50,14 +50,14 @@ model TransactionDetail {
 model Product {
   id     String @id @default(uuid())
   name   String
-  price  Decimal
+  price  Float
   stock  Int
 }
 
 model Sale {
   id        String   @id @default(uuid())
   date      DateTime
-  total     Decimal
+  total     Float
 
   details   SaleDetail[]
 }
@@ -68,7 +68,7 @@ model SaleDetail {
   productId String
 
   qty       Int
-  price     Decimal
+  price     Float
 
   sale      Sale @relation(fields: [saleId], references: [id])
 }
@@ -76,23 +76,51 @@ model SaleDetail {
 model Voucher {
   id        String   @id @default(uuid())
   code      String   @unique
-  value     Decimal
-  balance   Decimal
+  value     Float
+  balance   Float
   status    String
 }
 
 model Receivable {
   id        String   @id @default(uuid())
   customer  String
-  total     Decimal
-  paid      Decimal
+  total     Float
+  paid      Float
   status    String
 }
 
 model Payable {
   id        String   @id @default(uuid())
   name      String
-  total     Decimal
-  paid      Decimal
+  total     Float
+  paid      Float
   status    String
+}
+
+enum CashFlowType {
+  INCOME
+  EXPENSE
+}
+
+enum TransactionSource {
+  MANUAL
+  IMPORT
+  KASBON
+}
+
+model CashTransaction {
+  id          String            @id @default(uuid())
+  date        DateTime
+  type        CashFlowType
+  category    String
+  amount      Float
+  description String
+  source      TransactionSource @default(MANUAL)
+  kasbonType  String?
+  kasbonRef   String?
+  createdAt   DateTime          @default(now())
+
+  @@index([date])
+  @@index([type])
+  @@index([source])
 }

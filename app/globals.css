@@ -54,6 +54,11 @@ input:focus, select:focus, textarea:focus {
   100% { background-position: 0% 50%; }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .bg-mesh { animation: none; }
+  .animate-slide-up, .animate-slide-up-2, .animate-slide-up-3, .animate-slide-up-4 { animation: none; }
+}
+
 /* ===== CARD STYLES ===== */
 .card {
   background: white;

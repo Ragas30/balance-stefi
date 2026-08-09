@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Plus, Trash2, Save, ArrowLeftRight, AlertCircle, CheckCircle } from "lucide-react";
+import Toast from "@/components/Toast";
 
 type Account = { id: string; code: string; name: string; type: string };
 type JournalDetail = { accountId: string; debit: number; credit: number };
@@ -16,15 +17,19 @@ export default function TransaksiPage() {
   ]);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     fetch("/api/accounts")
-      .then((r) => r.json())
-      .then(setAccounts)
+      .then(async (r) => {
+        if (!r.ok) throw new Error("Gagal memuat data akun");
+        return r.json();
+      })
+      .then((data) => { if (Array.isArray(data)) setAccounts(data); })
       .catch(console.error);
   }, []);
 
-  const handleDetailChange = (index: number, field: keyof JournalDetail, value: any) => {
+  const handleDetailChange = (index: number, field: keyof JournalDetail, value: string | number) => {
     const nd = [...details];
     nd[index] = { ...nd[index], [field]: value };
     setDetails(nd);
@@ -45,7 +50,7 @@ export default function TransaksiPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isBalanced) return alert("Jurnal tidak seimbang!");
+    if (!isBalanced) return setError("Jurnal tidak seimbang! Debit harus sama dengan Kredit.");
 
     setSaving(true);
     try {
@@ -66,7 +71,7 @@ export default function TransaksiPage() {
         setDescription("");
       } else {
         const err = await res.json();
-        alert(err.error || "Gagal menyimpan jurnal");
+        setError(err.error || "Gagal menyimpan jurnal");
       }
     } catch (e) {
       console.error(e);
@@ -77,13 +82,8 @@ export default function TransaksiPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      {/* Success Toast */}
-      {success && (
-        <div className="fixed top-4 right-4 z-50 bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-2 animate-slide-up">
-          <CheckCircle size={18} />
-          <span className="font-semibold">Jurnal berhasil disimpan!</span>
-        </div>
-      )}
+      <Toast show={success} message="Jurnal berhasil disimpan!" onClose={() => setSuccess(false)} />
+      <Toast show={!!error} message={error} type="error" onClose={() => setError("")} />
 
       {/* Header */}
       <div className="animate-slide-up">

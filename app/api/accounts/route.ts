@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { z } from "zod";
+import { getErrorMessage, getZodIssueMessage } from "@/lib/utils";
 
 const accountSchema = z.object({
   code: z.string().min(1, "Kode Akun diperlukan"),
@@ -14,9 +15,9 @@ export async function GET() {
       orderBy: { code: "asc" },
     });
     return NextResponse.json(accounts);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("API Error [Accounts GET]:", error);
-    let message = error.message || "Gagal mengambil data akun.";
+    const message = getErrorMessage(error, "Gagal mengambil data akun.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -43,14 +44,15 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json(account, { status: 201 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("API Error [Accounts]:", error);
     if (error instanceof z.ZodError) {
-      const err = error as any;
-      return NextResponse.json({ error: err.issues.length ? err.issues.map((e: any) => e.message).join(", ") : "Validasi input gagal." }, { status: 400 });
+      return NextResponse.json({ error: getZodIssueMessage(error) }, { status: 400 });
     }
-    let message = error.message || "Gagal membuat akun.";
-    if (error.code === 'P2002') message = "Kode COA sudah digunakan! Harap gunakan kode akun lain.";
+    let message = getErrorMessage(error, "Gagal membuat akun.");
+    if (typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2002") {
+      message = "Kode COA sudah digunakan! Harap gunakan kode akun lain.";
+    }
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
