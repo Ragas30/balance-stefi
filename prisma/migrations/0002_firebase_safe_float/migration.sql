@@ -1,10 +1,21 @@
--- CreateEnum
-CREATE TYPE "CashFlowType" AS ENUM ('INCOME', 'EXPENSE');
+-- CreateEnum (idempotent: lewati jika sudah ada dari 0001_baseline)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'CashFlowType') THEN
+    CREATE TYPE "CashFlowType" AS ENUM ('INCOME', 'EXPENSE');
+  END IF;
+END
+$$;
 
--- CreateEnum
-CREATE TYPE "TransactionSource" AS ENUM ('MANUAL', 'IMPORT', 'KASBON');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'TransactionSource') THEN
+    CREATE TYPE "TransactionSource" AS ENUM ('MANUAL', 'IMPORT', 'KASBON');
+  END IF;
+END
+$$;
 
--- AlterTable
+-- AlterTable (no-op pada DB fresh karena kolom sudah DOUBLE PRECISION dari baseline)
 ALTER TABLE "Payable" ALTER COLUMN "total" SET DATA TYPE DOUBLE PRECISION,
 ALTER COLUMN "paid" SET DATA TYPE DOUBLE PRECISION;
 
@@ -29,8 +40,8 @@ ALTER COLUMN "credit" SET DATA TYPE DOUBLE PRECISION;
 ALTER TABLE "Voucher" ALTER COLUMN "value" SET DATA TYPE DOUBLE PRECISION,
 ALTER COLUMN "balance" SET DATA TYPE DOUBLE PRECISION;
 
--- CreateTable
-CREATE TABLE "CashTransaction" (
+-- CreateTable (idempotent: lewati jika sudah ada dari 0001_baseline)
+CREATE TABLE IF NOT EXISTS "CashTransaction" (
     "id" TEXT NOT NULL,
     "date" TIMESTAMP(3) NOT NULL,
     "type" "CashFlowType" NOT NULL,
@@ -45,11 +56,7 @@ CREATE TABLE "CashTransaction" (
     CONSTRAINT "CashTransaction_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
-CREATE INDEX "CashTransaction_date_idx" ON "CashTransaction"("date");
-
--- CreateIndex
-CREATE INDEX "CashTransaction_type_idx" ON "CashTransaction"("type");
-
--- CreateIndex
-CREATE INDEX "CashTransaction_source_idx" ON "CashTransaction"("source");
+-- CreateIndex (idempotent)
+CREATE INDEX IF NOT EXISTS "CashTransaction_date_idx" ON "CashTransaction"("date");
+CREATE INDEX IF NOT EXISTS "CashTransaction_type_idx" ON "CashTransaction"("type");
+CREATE INDEX IF NOT EXISTS "CashTransaction_source_idx" ON "CashTransaction"("source");
